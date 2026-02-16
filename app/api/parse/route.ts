@@ -71,6 +71,30 @@ export async function POST(request: NextRequest) {
     // 解析视频
     let result = await parser.parse(url);
 
+    // YouTube 视频直接使用 FFmpeg API 后备（因为 Cloudflare Workers 不支持 yt-dlp）
+    if (!result.success && platform === 'youtube') {
+      console.log(`[Parse] YouTube 解析失败，尝试 FFmpeg API`);
+      try {
+        const ffmpegApiUrl = process.env.FFMPEG_API_URL || 'https://ffmpeg.226022.xyz';
+        const ffmpegResponse = await fetch(`${ffmpegApiUrl}/parse`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url }),
+        });
+
+        if (ffmpegResponse.ok) {
+          const ffmpegData = await ffmpegResponse.json();
+          if (ffmpegData.success && ffmpegData.data) {
+            console.log(`[Parse] FFmpeg API 解析成功`);
+            ffmpegData.data.platform = 'youtube';
+            result = { success: true, data: ffmpegData.data };
+          }
+        }
+      } catch (ffmpegError) {
+        console.log('[Parse] FFmpeg API 解析失败:', ffmpegError);
+      }
+    }
+
     // 如果解析器失败，尝试使用通用网页解析作为后备
     if (!result.success) {
       console.log(`[Parse] 专用解析器失败，尝试通用网页解析: ${url}`);
