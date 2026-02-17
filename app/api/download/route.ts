@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import type { ApiResponse, DownloadRequest } from '@/lib/types';
 import { FILE_SIZE_LIMITS } from '@/lib/constants';
 
-export const maxDuration = 600; // 10 minutes
+export const maxDuration = 300; // 5 minutes (Vercel Hobby limit)
 
 // FFmpeg API URL
 const FFMPEG_API_URL = process.env.FFMPEG_API_URL || 'https://ffmpeg.226022.xyz';
