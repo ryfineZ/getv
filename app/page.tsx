@@ -1,65 +1,440 @@
-import Image from "next/image";
+'use client';
 
-export default function Home() {
+import { useState, useCallback, useMemo, useEffect, lazy, Suspense } from 'react';
+import { VideoResult } from '@/components/features/video-result';
+import { detectPlatform } from '@/lib/utils/url-detector';
+import { PLATFORMS } from '@/lib/constants';
+import type { VideoInfo, Platform, ApiResponse } from '@/lib/types';
+
+const WechatGuide = lazy(() => import('@/components/features/wechat-guide').then(mod => ({ default: mod.WechatGuide })));
+
+export default function HomePage() {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [videoInfos, setVideoInfos] = useState<VideoInfo[]>([]);
+  const [inputValue, setInputValue] = useState('');
+  const [showWechatGuide, setShowWechatGuide] = useState(false);
+  const [batchMode, setBatchMode] = useState(false);
+  const [parseProgress, setParseProgress] = useState({ current: 0, total: 0 });
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [lang, setLang] = useState<'zh' | 'en'>('zh');
+  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+
+  useEffect(() => {
+    const saved = localStorage.getItem('theme') as 'dark' | 'light' | null;
+    if (saved) {
+      setTheme(saved);
+      document.documentElement.classList.toggle('dark', saved === 'dark');
+      document.documentElement.classList.toggle('light', saved === 'light');
+    }
+  }, []);
+
+  const toggleTheme = useCallback(() => {
+    setTheme(prev => {
+      const next = prev === 'dark' ? 'light' : 'dark';
+      localStorage.setItem('theme', next);
+      document.documentElement.classList.toggle('dark', next === 'dark');
+      document.documentElement.classList.toggle('light', next === 'light');
+      return next;
+    });
+  }, []);
+
+  const extractUrls = useCallback((text: string): string[] => {
+    const urlRegex = /https?:\/\/[^\s<>"{}|\\^`[\]]+/gi;
+    const matches = text.match(urlRegex) || [];
+    return matches.map(url => {
+      const cleanUrl = url.replace(/[.,;:!?)\]}>'"]+$/, '');
+      try { new URL(cleanUrl); return cleanUrl; } catch { return null; }
+    }).filter((url): url is string => url !== null);
+  }, []);
+
+  const detectedPlatforms = useMemo((): Platform[] => {
+    const urls = extractUrls(inputValue);
+    const platforms = new Set<Platform>();
+    urls.forEach(url => {
+      const platform = detectPlatform(url);
+      if (platform !== 'unknown') platforms.add(platform);
+    });
+    return Array.from(platforms);
+  }, [inputValue, extractUrls]);
+
+  const urlCount = useMemo(() => extractUrls(inputValue).length, [inputValue, extractUrls]);
+
+  const parseSingleUrl = useCallback(async (url: string): Promise<VideoInfo | null> => {
+    try {
+      const response = await fetch('/api/parse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+      });
+      const data: ApiResponse<VideoInfo> = await response.json();
+      if (data.success && data.data) return data.data;
+      return null;
+    } catch { return null; }
+  }, []);
+
+  const addVideoInfo = useCallback((newInfo: VideoInfo) => {
+    setVideoInfos(prev => {
+      const exists = prev.some(v => v.id === newInfo.id);
+      if (exists) return prev;
+      return [newInfo, ...prev];
+    });
+  }, []);
+
+  const handleParse = useCallback(async () => {
+    const urls = extractUrls(inputValue);
+    if (urls.length === 0) {
+      setError(lang === 'zh' ? '请输入有效的视频链接' : 'Please enter a valid video URL');
+      return;
+    }
+
+    for (const url of urls) {
+      const platform = detectPlatform(url);
+      if (platform === 'wechat' && !url.includes('finder.video.qq.com') && !url.includes('.mp4')) {
+        setShowWechatGuide(true);
+        return;
+      }
+    }
+
+    setLoading(true);
+    setError(null);
+
+    if (urls.length === 1) {
+      setBatchMode(false);
+      const result = await parseSingleUrl(urls[0]);
+      if (result) {
+        addVideoInfo(result);
+        setExpandedId(result.id);
+      } else {
+        setError(lang === 'zh' ? '解析失败，请检查链接是否正确' : 'Parse failed, please check the URL');
+      }
+    } else {
+      setBatchMode(true);
+      setParseProgress({ current: 0, total: urls.length });
+      const concurrencyLimit = 3;
+      let completed = 0;
+      let successCount = 0;
+      let duplicateCount = 0;
+
+      const parseWithConcurrency = async (urlList: string[]) => {
+        const results: (VideoInfo | null)[] = [];
+        const executing: Promise<void>[] = [];
+
+        for (const url of urlList) {
+          const promise = parseSingleUrl(url).then(result => {
+            results.push(result);
+            completed++;
+            setParseProgress({ current: completed, total: urlList.length });
+            if (result) {
+              setVideoInfos(prev => {
+                const exists = prev.some(v => v.id === result.id);
+                if (exists) { duplicateCount++; return prev; }
+                successCount++;
+                return [result, ...prev];
+              });
+            }
+          });
+          executing.push(promise);
+          if (executing.length >= concurrencyLimit) {
+            await Promise.race(executing);
+            const settledIndex = executing.findIndex(p => Promise.race([p, Promise.resolve('pending')]).then(v => v !== 'pending'));
+            if (settledIndex >= 0) executing.splice(settledIndex, 1);
+          }
+        }
+        await Promise.all(executing);
+        return { results: results.filter(Boolean) as VideoInfo[], successCount, duplicateCount };
+      };
+
+      const { successCount: success, duplicateCount: duplicates } = await parseWithConcurrency(urls);
+      if (success === 0) setError(lang === 'zh' ? '所有链接解析失败' : 'All URLs failed to parse');
+      else if (duplicates > 0) setError(`成功解析 ${success} 个视频，${duplicates} 个重复链接已跳过`);
+      else if (success < urls.length) setError(`成功解析 ${success}/${urls.length} 个链接`);
+    }
+    setLoading(false);
+    setInputValue('');
+  }, [inputValue, extractUrls, parseSingleUrl, addVideoInfo, lang]);
+
+  const handleReset = useCallback(() => {
+    setVideoInfos([]);
+    setError(null);
+    setInputValue('');
+    setBatchMode(false);
+    setExpandedId(null);
+  }, []);
+
+  const handleRemoveResult = useCallback((id: string) => {
+    setVideoInfos(prev => prev.filter(v => v.id !== id));
+    if (expandedId === id) setExpandedId(null);
+  }, [expandedId]);
+
+  const handleToggleExpand = useCallback((id: string) => {
+    setExpandedId(prev => prev === id ? null : id);
+  }, []);
+
+  const t = {
+    zh: {
+      tagline: '精准下载与剪辑全网视频，无需安装任何软件',
+      searchPlaceholder: '粘贴视频链接，支持抖音、小红书、YouTube、TikTok...',
+      search: '搜索',
+      parsing: '解析中',
+      batchParsing: (c: number, t: number) => `解析中 ${c}/${t}`,
+      batchParse: (n: number) => `批量解析 (${n}个)`,
+      urlCount: (n: number) => `${n} 个链接`,
+      features: '为什么选择 GetV',
+      feat1Title: '极速解析', feat1Desc: '分布式架构，全球边缘节点加速',
+      feat2Title: '批量下载', feat2Desc: '支持批量粘贴链接，一次解析多个视频',
+      feat3Title: '完全免费', feat3Desc: '核心功能永久免费，无需注册登录',
+      feat4Title: '视频剪辑', feat4Desc: '精确到秒的在线剪辑，下载指定片段',
+      faq: '常见问题',
+      faq1Q: '支持哪些平台？', faq1A: '目前支持 YouTube、TikTok、Twitter/X、Instagram、抖音、小红书、视频号等主流平台。',
+      faq2Q: '如何批量下载？', faq2A: '在输入框中粘贴多个视频链接（每行一个），点击"搜索"即可。',
+      faq3Q: '视频号如何下载？', faq3A: '需使用抓包工具获取真实链接后粘贴到 GetV。',
+      faq4Q: '解析失败怎么办？', faq4A: '请确保链接正确且视频公开。私密视频无法解析。',
+      faq5Q: '支持最高什么画质？', faq5A: '支持最高 4K (2160p) 及 MP3 320kbps 音频。',
+      footer: 'GetV 仅供个人学习和研究使用，请勿用于商业用途',
+      copyright: (y: number) => `© ${y} GetV. All rights reserved.`,
+      extension: '浏览器插件', extensionHint: '部分网站无法直接解析？', extensionLink: '安装浏览器插件', extensionDesc: '，自动嗅探视频资源',
+      clearAll: '清空重新解析', successCount: (n: number) => `成功解析 ${n} 个视频`, backToList: '← 返回列表',
+    },
+    en: {
+      tagline: 'Download & trim videos from any platform, no software needed',
+      searchPlaceholder: 'Paste video URL (YouTube, TikTok, Twitter, Instagram...)',
+      search: 'Search',
+      parsing: 'Parsing',
+      batchParsing: (c: number, t: number) => `Parsing ${c}/${t}`,
+      batchParse: (n: number) => `Batch parse (${n})`,
+      urlCount: (n: number) => `${n} URLs`,
+      features: 'Why GetV',
+      feat1Title: 'Lightning Fast', feat1Desc: 'Distributed architecture, global edge acceleration',
+      feat2Title: 'Batch Download', feat2Desc: 'Paste multiple links, parse all at once',
+      feat3Title: 'Totally Free', feat3Desc: 'Core features free forever, no login required',
+      feat4Title: 'Video Trimming', feat4Desc: 'Precise online trimming, download exact segments',
+      faq: 'FAQ',
+      faq1Q: 'What platforms are supported?', faq1A: 'Supports YouTube, TikTok, Twitter/X, Instagram, etc.',
+      faq2Q: 'How to batch download?', faq2A: 'Paste multiple links (one per line) and click "Search".',
+      faq3Q: 'How to download WeChat videos?', faq3A: 'Use packet capture tools to get the real URL.',
+      faq4Q: 'What if parsing fails?', faq4A: 'Ensure the video is public.',
+      faq5Q: 'Max quality?', faq5A: 'Up to 4K (2160p) and MP3 320kbps.',
+      footer: 'GetV is for personal learning and research only',
+      copyright: (y: number) => `© ${y} GetV. All rights reserved.`,
+      extension: 'Browser Extension', extensionHint: 'Some sites can\'t be parsed directly?', extensionLink: 'Install browser extension', extensionDesc: ' to auto-detect video resources',
+      clearAll: 'Clear & restart', successCount: (n: number) => `Successfully parsed ${n} videos`, backToList: '← Back to list',
+    },
+  };
+
+  const i = t[lang];
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
+    <main className="relative min-h-screen z-10 flex flex-col">
+      {/* Header */}
+      <header className="fixed top-0 left-0 right-0 z-50 transition-all duration-300 border-b border-[var(--border)] bg-[var(--background)]/80 backdrop-blur-md">
+        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+          <a href="/" className="flex items-center gap-3 group">
+            <span className="text-2xl font-bold tracking-tighter text-gradient group-hover:opacity-80 transition-opacity">
+              GetV
+            </span>
+            <span className="badge">Beta</span>
           </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+          <div className="flex items-center gap-4">
+            <a href="/extension" className="hidden md:flex items-center gap-1.5 text-sm text-[var(--muted-foreground)] hover:text-white transition-colors">
+              {i.extension}
+            </a>
+            <button
+              onClick={() => setLang(lang === 'zh' ? 'en' : 'zh')}
+              className="btn btn-ghost btn-sm border border-[var(--border)] rounded-full px-4 hover:border-[var(--primary)]"
+            >
+              {lang === 'zh' ? 'EN' : '中文'}
+            </button>
+            <button
+              onClick={toggleTheme}
+              className="w-9 h-9 rounded-full flex items-center justify-center border border-[var(--border)] hover:border-[var(--primary)] hover:bg-[var(--glass-bg-hover)] transition-all bg-transparent"
+              title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+            >
+              <span className="text-lg leading-none select-none">{theme === 'dark' ? '☀️' : '🌙'}</span>
+            </button>
+          </div>
         </div>
-      </main>
-    </div>
+      </header>
+
+      {/* Hero Section */}
+      <section className="pt-32 pb-16 md:pt-48 md:pb-24 flex-grow flex flex-col justify-center">
+        <div className="max-w-5xl mx-auto px-6 text-center">
+          {videoInfos.length === 0 && (
+            <div className="animate-fadeIn mb-12">
+              <h1 className="heading-xl mb-6 tracking-tight">
+                <span className="text-gradient-cyan">Get</span> <span className="text-[var(--foreground)]">Video</span>
+              </h1>
+              <p className="text-xl md:text-2xl text-[var(--muted-foreground)] max-w-2xl mx-auto font-light leading-relaxed">
+                {i.tagline}
+              </p>
+            </div>
+          )}
+
+          {/* Search Bar */}
+          <div className="w-full max-w-3xl mx-auto relative z-20">
+            <div className={`search-bar flex items-center gap-3 p-2 ${loading ? 'opacity-80 pointer-events-none' : ''}`}>
+              {detectedPlatforms.length > 0 && (
+                <div className="flex gap-2 shrink-0 pl-2">
+                  {detectedPlatforms.map(platform => (
+                    <span key={platform} className="text-[10px] px-2 py-1 rounded-full font-bold text-black uppercase tracking-wider" style={{ backgroundColor: PLATFORMS[platform].color }}>
+                      {PLATFORMS[platform].name}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              <input
+                type="text"
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && !loading) { e.preventDefault(); handleParse(); } }}
+                placeholder={i.searchPlaceholder}
+                className="flex-1 bg-transparent border-none outline-none text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] text-lg py-3 px-2 font-medium"
+                disabled={loading}
+              />
+
+              {urlCount > 1 && <span className="text-xs text-[var(--primary)] font-bold shrink-0">{i.urlCount(urlCount)}</span>}
+
+              <div className="flex gap-2 shrink-0 items-center">
+                <button
+                  onClick={async () => { try { const text = await navigator.clipboard.readText(); setInputValue(text); } catch { console.error('Clipboard error'); } }}
+                  className="btn btn-ghost btn-sm !rounded-lg p-2 flex items-center justify-center"
+                  title="Paste"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
+                </button>
+                <button
+                  onClick={handleParse}
+                  disabled={!inputValue.trim() || loading}
+                  className="btn btn-primary btn-md !rounded-xl min-w-[100px]"
+                >
+                  {loading ? (
+                    <div className="flex items-center gap-2">
+                      <div className="loader" style={{ width: 16, height: 16, borderTopColor: 'black', borderRightColor: 'black' }} />
+                      <span>{batchMode ? i.batchParsing(parseProgress.current, parseProgress.total) : i.parsing}</span>
+                    </div>
+                  ) : (
+                    urlCount > 1 ? i.batchParse(urlCount) : i.search
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {videoInfos.length === 0 && (
+            <div className="mt-8 text-sm text-[var(--muted-foreground)]/60">
+              {i.extensionHint} <a href="/extension" className="text-[var(--primary)] hover:text-white transition-colors border-b border-[var(--primary)] pb-0.5">{i.extensionLink}</a>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* Error Message */}
+      {error && (
+        <div className="max-w-2xl mx-auto px-6 mb-10 w-full">
+          <div className="glass p-6 text-center text-[var(--error)] border-[var(--error)]/30 bg-[var(--error)]/5 animate-fadeIn font-medium">
+            {error}
+          </div>
+        </div>
+      )}
+
+      {/* Video Results */}
+      {videoInfos.length > 0 && (
+        <section className="max-w-7xl mx-auto px-6 pb-20 w-full animate-slideUp">
+          {batchMode && videoInfos.length > 1 && (
+            <div className="flex justify-between items-center mb-6 px-2">
+              <span className="text-[var(--primary)] font-mono text-sm uppercase tracking-wider">{i.successCount(videoInfos.length)}</span>
+              <button onClick={handleReset} className="btn btn-ghost btn-sm hover:text-[var(--error)]">
+                {i.clearAll}
+              </button>
+            </div>
+          )}
+
+          <div className="space-y-6">
+            {videoInfos.map((videoInfo) => {
+              const isExpanded = expandedId === videoInfo.id;
+              const isCompact = videoInfos.length > 1 && !isExpanded;
+              return (
+                <div key={videoInfo.id} className="relative group">
+                  {videoInfos.length > 1 && (
+                    <button onClick={() => handleRemoveResult(videoInfo.id)} className="absolute -top-3 -right-3 z-20 w-8 h-8 bg-[var(--background)] border border-[var(--border)] text-[var(--muted-foreground)] hover:text-[var(--error)] hover:border-[var(--error)] rounded-full flex items-center justify-center transition-all shadow-xl">×</button>
+                  )}
+                  {isCompact ? (
+                    <VideoResult videoInfo={videoInfo} compact={true} onExpand={() => handleToggleExpand(videoInfo.id)} />
+                  ) : (
+                    <div className="relative">
+                      {videoInfos.length > 1 && (
+                        <button onClick={() => setExpandedId(null)} className="mb-4 btn btn-ghost btn-sm text-xs uppercase tracking-widest opacity-60 hover:opacity-100 pl-0">
+                          {i.backToList}
+                        </button>
+                      )}
+                      <VideoResult videoInfo={videoInfo} onReset={videoInfos.length === 1 ? handleReset : undefined} compact={false} lang={lang} />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* Features & FAQ */}
+      {videoInfos.length === 0 && (
+        <>
+          <section className="max-w-7xl mx-auto px-6 py-20 border-t border-[var(--border)]">
+            <h2 className="heading-lg text-center mb-16 text-transparent bg-clip-text bg-gradient-to-r from-white to-[var(--muted-foreground)]">{i.features}</h2>
+            <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+              {[
+                { icon: '⚡', title: i.feat1Title, desc: i.feat1Desc },
+                { icon: '📦', title: i.feat2Title, desc: i.feat2Desc },
+                { icon: '🆓', title: i.feat3Title, desc: i.feat3Desc },
+                { icon: '✂️', title: i.feat4Title, desc: i.feat4Desc },
+              ].map((feat) => (
+                <div key={feat.title} className="glass p-8 text-center hover:scale-105 transition-transform duration-300">
+                  <div className="text-4xl mb-6 opacity-80">{feat.icon}</div>
+                  <h3 className="font-bold text-lg mb-3 text-white">{feat.title}</h3>
+                  <p className="text-sm text-[var(--muted-foreground)] leading-relaxed">{feat.desc}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="max-w-3xl mx-auto px-6 py-20">
+            <h2 className="heading-lg text-center mb-12">{i.faq}</h2>
+            <div className="space-y-4">
+              {[{ q: i.faq1Q, a: i.faq1A }, { q: i.faq2Q, a: i.faq2A }, { q: i.faq3Q, a: i.faq3A }, { q: i.faq4Q, a: i.faq4A }, { q: i.faq5Q, a: i.faq5A }].map((faq) => (
+                <details key={faq.q} className="faq-item">
+                  <summary>{faq.q} <span className="text-[var(--primary)] text-xl">+</span></summary>
+                  <div className="faq-content">{faq.a}</div>
+                </details>
+              ))}
+            </div>
+          </section>
+        </>
+      )}
+
+      {/* Footer */}
+      <footer className="border-t border-[var(--border)] bg-[var(--background)] py-12">
+        <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-6 opacity-60 hover:opacity-100 transition-opacity">
+          <div className="flex items-center gap-3">
+            <span className="font-bold text-xl tracking-tight text-white">GetV</span>
+            <span className="w-px h-4 bg-[var(--border)]"></span>
+            <span className="text-xs text-[var(--muted-foreground)] uppercase tracking-wide">
+              {lang === 'zh' ? 'Free Video Tools' : 'Free Video Tools'}
+            </span>
+          </div>
+          <p className="text-xs text-[var(--muted-foreground)]">{i.footer}</p>
+          <div className="text-xs font-mono text-[var(--muted-foreground)]">
+            {i.copyright(new Date().getFullYear())}
+          </div>
+        </div>
+      </footer>
+
+      {showWechatGuide && (
+        <Suspense fallback={null}>
+          <WechatGuide onClose={() => setShowWechatGuide(false)} onSubmit={(url) => { setShowWechatGuide(false); setInputValue(url); }} />
+        </Suspense>
+      )}
+    </main>
   );
 }

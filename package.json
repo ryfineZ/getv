@@ -1,19 +1,24 @@
 {
-  "name": "cutcut",
+  "name": "getv",
   "version": "0.1.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:cf": "npx opennextjs-cloudflare build",
+    "preview": "npx wrangler pages dev",
+    "deploy": "npm run build && npm run build:cf && npx wrangler deploy",
     "start": "next start",
     "lint": "eslint"
   },
   "dependencies": {
+    "btch-downloader": "^6.0.25",
     "next": "16.1.6",
     "react": "19.2.3",
     "react-dom": "19.2.3"
   },
   "devDependencies": {
+    "@opennextjs/cloudflare": "^1.16.5",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
@@ -21,6 +26,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "wrangler": "^4.65.0"
   }
 }
