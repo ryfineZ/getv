@@ -490,6 +490,46 @@ html.light .tab-item.active {
   transition: width 0.3s ease;
 }
 
+/* 处理中：不确定进度的来回滑动动画 */
+.progress-bar-fill.indeterminate {
+  width: 40% !important;
+  animation: indeterminate-slide 1.8s ease-in-out infinite;
+  background: linear-gradient(90deg,
+      var(--primary),
+      var(--secondary),
+      var(--primary));
+  background-size: 200% 100%;
+  animation: indeterminate-slide 1.8s ease-in-out infinite,
+    shimmer 2s linear infinite;
+}
+
+@keyframes indeterminate-slide {
+  0% {
+    margin-left: 0%;
+    width: 30%;
+  }
+
+  50% {
+    margin-left: 40%;
+    width: 50%;
+  }
+
+  100% {
+    margin-left: 0%;
+    width: 30%;
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+
+  100% {
+    background-position: -200% 0;
+  }
+}
+
 /* Loader Spinner */
 .loader {
   border: 2px solid rgba(255, 255, 255, 0.3);

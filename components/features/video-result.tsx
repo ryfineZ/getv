@@ -169,7 +169,7 @@ function VideoResultInner({ videoInfo, onReset, compact, onExpand, lang = 'zh' }
 
   const getProgressText = () => {
     if (!downloading) return '';
-    if (downloadProgress < 0) return lang === 'zh' ? '处理中...' : 'Processing...';
+    if (downloadProgress < 0) return lang === 'zh' ? '服务器处理中，请稍候...' : 'Server processing, please wait...';
     return `${downloadProgress}%`;
   };
 
@@ -547,7 +547,7 @@ function VideoResultInner({ videoInfo, onReset, compact, onExpand, lang = 'zh' }
             {downloading && (
               <div className="mb-4">
                 <div className="progress-bar">
-                  <div className="progress-bar-fill" style={{ width: downloadProgress < 0 ? '30%' : `${downloadProgress}%` }} />
+                  <div className={`progress-bar-fill${downloadProgress < 0 ? ' indeterminate' : ''}`} style={downloadProgress >= 0 ? { width: `${downloadProgress}%` } : undefined} />
                 </div>
                 <p className="text-xs text-center text-[var(--muted-foreground)] mt-1.5">{getProgressText()}</p>
               </div>
