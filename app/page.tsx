@@ -306,7 +306,7 @@ export default function HomePage() {
                 <button
                   onClick={handleParse}
                   disabled={!inputValue.trim() || loading}
-                  className="btn btn-primary btn-md !rounded-xl min-w-[100px]"
+                  className="btn btn-primary btn-md !rounded-xl sm:min-w-[100px]"
                 >
                   {loading ? (
                     <div className="flex items-center gap-2">
