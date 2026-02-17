@@ -77,6 +77,9 @@ const priorityDomains = [
   'fbcdn.net',
   'pornhub.com',
   'phncdn.com',
+  'bilibili.com',
+  'bilivideo.com',
+  'b23.tv',
 ];
 
 // 监听所有网络请求 - 使用 onHeadersReceived 获取响应头
@@ -111,12 +114,12 @@ function isVideoUrl(url, details) {
     const type = contentType.value.toLowerCase();
     // 明确的视频类型
     if (type.includes('video/') || type.includes('application/x-mpegurl') ||
-        type.includes('application/vnd.apple.mpegurl')) {
+      type.includes('application/vnd.apple.mpegurl')) {
       return true;
     }
     // 明确的非视频类型
     if (type.includes('text/') || type.includes('application/json') ||
-        type.includes('image/') || type.includes('application/javascript')) {
+      type.includes('image/') || type.includes('application/javascript')) {
       return false;
     }
   }
@@ -217,6 +220,8 @@ function generateTitle(url, source, type) {
     'instagram': 'Instagram',
     'pornhub': 'PornHub',
     'phncdn': 'PornHub',
+    'bilibili': 'Bilibili',
+    'bilivideo': 'Bilibili',
   };
 
   let sourceName = source;
@@ -379,13 +384,38 @@ function detectVideoType(url) {
   return 'unknown';
 }
 
+// 获取 B 站 SESSDATA Cookie（自动从浏览器中读取）
+async function getBilibiliSessdata() {
+  try {
+    const cookie = await chrome.cookies.get({
+      url: 'https://www.bilibili.com',
+      name: 'SESSDATA',
+    });
+    return cookie ? cookie.value : null;
+  } catch (e) {
+    console.log('[GetV] 获取 B 站 Cookie 失败:', e);
+    return null;
+  }
+}
+
 // 发送视频到 GetV
 async function sendToGetV(videoUrl) {
   try {
+    const body = { url: videoUrl };
+
+    // B 站链接自动附带 SESSDATA
+    if (videoUrl.includes('bilibili.com') || videoUrl.includes('b23.tv')) {
+      const sessdata = await getBilibiliSessdata();
+      if (sessdata) {
+        body.sessdata = sessdata;
+        console.log('[GetV] 已自动附带 B 站 SESSDATA');
+      }
+    }
+
     const response = await fetch(`${getvServer}/api/parse`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: videoUrl }),
+      body: JSON.stringify(body),
     });
 
     const data = await response.json();
