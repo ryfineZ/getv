@@ -83,6 +83,15 @@ function VideoResultInner({ videoInfo, onReset, compact, onExpand, lang = 'zh' }
   const [trimStart, setTrimStart] = useState(0);
   const [trimEnd, setTrimEnd] = useState(videoInfo.duration);
 
+  // 对防盗链 CDN 的图片使用代理
+  const proxyImageUrl = (url: string | undefined) => {
+    if (!url) return undefined;
+    if (url.includes('hdslb.com') || url.includes('bilibili.com')) {
+      return `/api/image-proxy?url=${encodeURIComponent(url)}`;
+    }
+    return url;
+  };
+
   // 当前 Tab 的原始格式列表
   const rawFormats = useMemo(() => {
     switch (activeTab) {
@@ -431,7 +440,7 @@ function VideoResultInner({ videoInfo, onReset, compact, onExpand, lang = 'zh' }
         <div className="flex gap-4 items-center">
           <div className="w-24 h-16 bg-black/50 rounded-lg overflow-hidden shrink-0 relative border border-[var(--border)]">
             {videoInfo.thumbnail ? (
-              <img src={videoInfo.thumbnail} alt="" className="w-full h-full object-cover" />
+              <img src={proxyImageUrl(videoInfo.thumbnail)} alt="" className="w-full h-full object-cover" />
             ) : (
               <div className="flex items-center justify-center h-full text-[var(--muted-foreground)] text-xs">{t.noPrev}</div>
             )}
@@ -472,7 +481,7 @@ function VideoResultInner({ videoInfo, onReset, compact, onExpand, lang = 'zh' }
             {/* 视频缩略图 */}
             <div className="relative aspect-video bg-black/50 rounded-xl overflow-hidden">
               {videoInfo.thumbnail ? (
-                <img src={videoInfo.thumbnail} alt={videoInfo.title} className="w-full h-full object-contain" />
+                <img src={proxyImageUrl(videoInfo.thumbnail)} alt={videoInfo.title} className="w-full h-full object-contain" />
               ) : (
                 <div className="flex items-center justify-center h-full text-[var(--muted-foreground)]">{t.noPrev}</div>
               )}
