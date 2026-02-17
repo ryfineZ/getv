@@ -11,7 +11,7 @@ export abstract class BaseParser {
   /**
    * 解析视频信息
    */
-  abstract parse(url: string): Promise<ParseResult>;
+  abstract parse(url: string, options?: Record<string, unknown>): Promise<ParseResult>;
 
   /**
    * 创建标准视频格式对象

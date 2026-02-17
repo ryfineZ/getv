@@ -19,6 +19,8 @@ export default function HomePage() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [lang, setLang] = useState<'zh' | 'en'>('zh');
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+  const [showSettings, setShowSettings] = useState(false);
+  const [sessdata, setSessdata] = useState('');
 
   useEffect(() => {
     const saved = localStorage.getItem('theme') as 'dark' | 'light' | null;
@@ -27,6 +29,9 @@ export default function HomePage() {
       document.documentElement.classList.toggle('dark', saved === 'dark');
       document.documentElement.classList.toggle('light', saved === 'light');
     }
+    // 加载保存的 SESSDATA
+    const savedSessdata = localStorage.getItem('bilibili_sessdata');
+    if (savedSessdata) setSessdata(savedSessdata);
   }, []);
 
   const toggleTheme = useCallback(() => {
@@ -62,16 +67,21 @@ export default function HomePage() {
 
   const parseSingleUrl = useCallback(async (url: string): Promise<VideoInfo | null> => {
     try {
+      const body: Record<string, string> = { url };
+      // B 站链接附带 SESSDATA
+      if (sessdata && (url.includes('bilibili.com') || url.includes('b23.tv'))) {
+        body.sessdata = sessdata;
+      }
       const response = await fetch('/api/parse', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url }),
+        body: JSON.stringify(body),
       });
       const data: ApiResponse<VideoInfo> = await response.json();
       if (data.success && data.data) return data.data;
       return null;
     } catch { return null; }
-  }, []);
+  }, [sessdata]);
 
   const addVideoInfo = useCallback((newInfo: VideoInfo) => {
     setVideoInfos(prev => {
@@ -195,6 +205,14 @@ export default function HomePage() {
       copyright: (y: number) => `© ${y} GetV. All rights reserved.`,
       extension: '浏览器插件', extensionHint: '部分网站无法直接解析？', extensionLink: '安装浏览器插件', extensionDesc: '，自动嗅探视频资源',
       clearAll: '清空重新解析', successCount: (n: number) => `成功解析 ${n} 个视频`, backToList: '← 返回列表',
+      settings: '设置',
+      settingsTitle: '平台设置',
+      biliSessdata: 'B 站 SESSDATA',
+      biliSessdataHint: '填写后可解锁 720P 以上高清画质。从浏览器 Cookie 中获取。',
+      biliSessdataPlaceholder: '粘贴 SESSDATA 值...',
+      settingsSave: '保存',
+      settingsClose: '关闭',
+      settingsClear: '清除',
     },
     en: {
       tagline: 'Download & trim videos from any platform, no software needed',
@@ -219,6 +237,14 @@ export default function HomePage() {
       copyright: (y: number) => `© ${y} GetV. All rights reserved.`,
       extension: 'Browser Extension', extensionHint: 'Some sites can\'t be parsed directly?', extensionLink: 'Install browser extension', extensionDesc: ' to auto-detect video resources',
       clearAll: 'Clear & restart', successCount: (n: number) => `Successfully parsed ${n} videos`, backToList: '← Back to list',
+      settings: 'Settings',
+      settingsTitle: 'Platform Settings',
+      biliSessdata: 'Bilibili SESSDATA',
+      biliSessdataHint: 'Enables 720P+ quality. Get SESSDATA from browser cookies.',
+      biliSessdataPlaceholder: 'Paste SESSDATA value...',
+      settingsSave: 'Save',
+      settingsClose: 'Close',
+      settingsClear: 'Clear',
     },
   };
 
@@ -251,6 +277,13 @@ export default function HomePage() {
               title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
             >
               <span className="text-lg leading-none select-none">{theme === 'dark' ? '☀️' : '🌙'}</span>
+            </button>
+            <button
+              onClick={() => setShowSettings(true)}
+              className="w-9 h-9 rounded-full flex items-center justify-center border border-[var(--border)] hover:border-[var(--primary)] hover:bg-[var(--glass-bg-hover)] transition-all bg-transparent"
+              title={i.settings}
+            >
+              <span className="text-lg leading-none select-none">⚙️</span>
             </button>
           </div>
         </div>
@@ -434,6 +467,56 @@ export default function HomePage() {
         <Suspense fallback={null}>
           <WechatGuide onClose={() => setShowWechatGuide(false)} onSubmit={(url) => { setShowWechatGuide(false); setInputValue(url); }} />
         </Suspense>
+      )}
+
+      {/* Settings Modal */}
+      {showSettings && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setShowSettings(false)}>
+          <div className="glass-card w-[90%] max-w-md p-6 rounded-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-lg font-bold text-[var(--foreground)]">{i.settingsTitle}</h2>
+              <button onClick={() => setShowSettings(false)} className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-[var(--glass-bg-hover)] transition-colors text-[var(--muted-foreground)]">✕</button>
+            </div>
+
+            {/* Bilibili SESSDATA */}
+            <div className="space-y-3">
+              <label className="block">
+                <span className="text-sm font-medium text-[var(--foreground)] flex items-center gap-2">
+                  <span style={{ color: '#FB7299' }}>●</span> {i.biliSessdata}
+                  {sessdata && <span className="text-xs text-green-400">✓</span>}
+                </span>
+                <span className="text-xs text-[var(--muted-foreground)] mt-1 block">{i.biliSessdataHint}</span>
+              </label>
+              <input
+                type="password"
+                value={sessdata}
+                onChange={(e) => setSessdata(e.target.value)}
+                placeholder={i.biliSessdataPlaceholder}
+                className="w-full px-4 py-2.5 rounded-xl bg-[var(--glass-bg)] border border-[var(--border)] text-[var(--foreground)] text-sm placeholder:text-[var(--muted-foreground)] focus:outline-none focus:border-[var(--primary)] transition-colors"
+              />
+              <div className="flex gap-2 pt-2">
+                <button
+                  onClick={() => {
+                    localStorage.setItem('bilibili_sessdata', sessdata);
+                    setShowSettings(false);
+                  }}
+                  className="flex-1 py-2 rounded-xl bg-[var(--primary)] text-white text-sm font-medium hover:opacity-90 transition-opacity"
+                >
+                  {i.settingsSave}
+                </button>
+                <button
+                  onClick={() => {
+                    setSessdata('');
+                    localStorage.removeItem('bilibili_sessdata');
+                  }}
+                  className="px-4 py-2 rounded-xl border border-[var(--border)] text-[var(--muted-foreground)] text-sm hover:border-[var(--primary)] transition-colors"
+                >
+                  {i.settingsClear}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </main>
   );

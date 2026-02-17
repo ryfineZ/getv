@@ -66,7 +66,35 @@ export class BilibiliParser extends BaseParser {
     readonly platform = 'bilibili' as const;
     readonly name = 'Bilibili';
 
-    async parse(url: string): Promise<ParseResult> {
+    // 可选的 SESSDATA Cookie（解锁高清画质）
+    private sessdata: string | undefined;
+
+    /**
+     * 设置 B 站 SESSDATA Cookie
+     */
+    setSessdata(sessdata?: string) {
+        this.sessdata = sessdata;
+    }
+
+    /**
+     * 构建请求头（含可选 Cookie）
+     */
+    private buildHeaders(): Record<string, string> {
+        const headers: Record<string, string> = {
+            'Referer': 'https://www.bilibili.com',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        };
+        if (this.sessdata) {
+            headers['Cookie'] = `SESSDATA=${this.sessdata}`;
+        }
+        return headers;
+    }
+
+    async parse(url: string, options?: { sessdata?: string }): Promise<ParseResult> {
+        // 如果传入了 sessdata，临时设置
+        if (options?.sessdata) {
+            this.sessdata = options.sessdata;
+        }
         try {
             // 1. 解析短链接 (b23.tv)
             const realUrl = await this.resolveShortUrl(url);
@@ -157,12 +185,7 @@ export class BilibiliParser extends BaseParser {
 
             const response = await this.fetch(
                 `https://api.bilibili.com/x/web-interface/view?${param}`,
-                {
-                    headers: {
-                        'Referer': 'https://www.bilibili.com',
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    },
-                }
+                { headers: this.buildHeaders() }
             );
 
             const data = await response.json() as {
@@ -209,14 +232,10 @@ export class BilibiliParser extends BaseParser {
                 fourk: '1',
             });
 
+            console.log('[Bilibili] Requesting playurl with sessdata:', this.sessdata ? 'yes' : 'no');
             const response = await this.fetch(
                 `https://api.bilibili.com/x/player/playurl?${params.toString()}`,
-                {
-                    headers: {
-                        'Referer': 'https://www.bilibili.com',
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    },
-                }
+                { headers: this.buildHeaders() }
             );
 
             const data = await response.json() as {

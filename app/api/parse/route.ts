@@ -10,6 +10,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     let { url } = body;
+    const sessdata: string | undefined = body.sessdata;  // 可选的 B 站 SESSDATA
 
     if (!url) {
       return NextResponse.json<ApiResponse>({
@@ -69,7 +70,13 @@ export async function POST(request: NextRequest) {
     }
 
     // 解析视频
-    let result = await parser.parse(url);
+    let result;
+    if (platform === 'bilibili' && sessdata) {
+      // Bilibili 使用 sessdata 解析高清
+      result = await parser.parse(url, { sessdata });
+    } else {
+      result = await parser.parse(url);
+    }
 
     // YouTube 视频直接使用 FFmpeg API 后备（因为 Cloudflare Workers 不支持 yt-dlp）
     if (!result.success && platform === 'youtube') {

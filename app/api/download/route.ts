@@ -129,9 +129,11 @@ export async function POST(request: NextRequest) {
     // 普通下载（直接代理）
     // 检测是否需要特殊 Referer
     const needsPornhubReferer = videoUrl.includes('pornhub') ||
-                                videoUrl.includes('phncdn');
+      videoUrl.includes('phncdn');
     const needsXhsReferer = videoUrl.includes('xhscdn') ||
-                            videoUrl.includes('xiaohongshu');
+      videoUrl.includes('xiaohongshu');
+    const needsBilibiliReferer = videoUrl.includes('bilivideo') ||
+      videoUrl.includes('bilibili');
 
     const fetchHeaders: Record<string, string> = {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -141,6 +143,8 @@ export async function POST(request: NextRequest) {
       fetchHeaders['Referer'] = 'https://www.pornhub.com/';
     } else if (needsXhsReferer) {
       fetchHeaders['Referer'] = 'https://www.xiaohongshu.com/';
+    } else if (needsBilibiliReferer) {
+      fetchHeaders['Referer'] = 'https://www.bilibili.com/';
     }
 
     // 获取视频流
