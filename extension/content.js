@@ -1,6 +1,6 @@
 // GetV 视频嗅探助手 - 内容脚本
 
-(function() {
+(function () {
   'use strict';
 
   // 检测是否已注入
@@ -8,6 +8,21 @@
   window.__getvInjected = true;
 
   console.log('[GetV] 内容脚本已加载');
+
+  // 自动注入 B 站 SESSDATA 到 GetV 页面
+  // 当用户在 GetV 网页粘贴 B 站链接时，自动使用浏览器中已登录的 B 站 Cookie
+  const host = window.location.hostname;
+  if (host === 'localhost' || host.includes('getv') || host.includes('226022.xyz')) {
+    chrome.runtime.sendMessage({ type: 'GET_BILIBILI_SESSDATA' }, (response) => {
+      if (response && response.sessdata) {
+        const existing = localStorage.getItem('bilibili_sessdata');
+        if (existing !== response.sessdata) {
+          localStorage.setItem('bilibili_sessdata', response.sessdata);
+          console.log('[GetV] 已自动注入 B 站 SESSDATA（来自浏览器 Cookie）');
+        }
+      }
+    });
+  }
 
   // 创建悬浮按钮
   function createFloatingButton() {
@@ -92,7 +107,7 @@
             }
           }
         });
-      } catch (e) {}
+      } catch (e) { }
     });
 
     // 4. 从页面 HTML 中提取视频链接（正则匹配）
@@ -265,11 +280,11 @@
     // 自动粘贴
     navigator.clipboard.readText().then(text => {
       if (text && (text.includes('finder.video.qq.com') ||
-                   text.includes('channels.weixin.qq.com') ||
-                   text.includes('weixin.qq.com'))) {
+        text.includes('channels.weixin.qq.com') ||
+        text.includes('weixin.qq.com'))) {
         input.value = text;
       }
-    }).catch(() => {});
+    }).catch(() => { });
   }
 
   // 发送到 GetV
@@ -330,11 +345,11 @@
 
   // 拦截 XHR 请求
   const originalXHR = window.XMLHttpRequest;
-  window.XMLHttpRequest = function() {
+  window.XMLHttpRequest = function () {
     const xhr = new originalXHR();
     const originalOpen = xhr.open;
 
-    xhr.open = function(method, url) {
+    xhr.open = function (method, url) {
       if (isVideoRequestUrl(url)) {
         chrome.runtime.sendMessage({
           type: 'MANUAL_ADD',
@@ -350,7 +365,7 @@
 
   // 拦截 Fetch 请求
   const originalFetch = window.fetch;
-  window.fetch = function(url, options) {
+  window.fetch = function (url, options) {
     if (typeof url === 'string' && isVideoRequestUrl(url)) {
       chrome.runtime.sendMessage({
         type: 'MANUAL_ADD',

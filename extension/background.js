@@ -348,6 +348,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         .catch(error => sendResponse({ success: false, error: error.message }));
       return true;
 
+    case 'GET_BILIBILI_SESSDATA':
+      getBilibiliSessdata()
+        .then(sessdata => sendResponse({ sessdata }))
+        .catch(() => sendResponse({ sessdata: null }));
+      return true; // async response
+
     case 'SET_SERVER':
       getvServer = message.server;
       chrome.storage.sync.set({ getvServer: message.server });
