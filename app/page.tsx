@@ -161,7 +161,6 @@ export default function HomePage() {
       else if (success < urls.length) setError(`成功解析 ${success}/${urls.length} 个链接`);
     }
     setLoading(false);
-    setInputValue('');
   }, [inputValue, extractUrls, parseSingleUrl, addVideoInfo, lang]);
 
   const handleReset = useCallback(() => {

@@ -19,6 +19,10 @@ function needsFfmpegApi(url: string): boolean {
   if (url.includes('.m3u8')) {
     return true;
   }
+  // Bilibili DASH 流需要 FFmpeg API 代理（CDN 要求 Referer）
+  if (url.includes('bilivideo.com') || url.includes('bilivideo.cn')) {
+    return true;
+  }
   return false;
 }
 
