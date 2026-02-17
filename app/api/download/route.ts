@@ -37,62 +37,19 @@ async function downloadViaFfmpegApi(
     referer?: string;
   }
 ): Promise<Response> {
-  const action = options?.action || 'download';
-
-  // 根据 action 映射到 FFmpeg API 的实际端点
-  let endpoint: string;
-  let body: Record<string, unknown>;
-
-  switch (action) {
-    case 'merge':
-      endpoint = '/merge';
-      body = {
-        videoUrl,
-        audioUrl: options?.audioUrl,
-        outputFormat: 'mp4',
-        referer: options?.referer,
-      };
-      break;
-
-    case 'trim':
-      endpoint = '/trim';
-      body = {
-        videoUrl,
-        startTime: options?.trim?.start,
-        endTime: options?.trim?.end,
-        outputFormat: 'mp4',
-        referer: options?.referer,
-      };
-      break;
-
-    case 'extract-audio':
-      endpoint = '/extract-audio';
-      body = {
-        videoUrl,
-        format: options?.audioFormat || 'mp3',
-        bitrate: options?.audioBitrate ? String(options.audioBitrate) : '320',
-        referer: options?.referer,
-      };
-      break;
-
-    default:
-      // 默认使用 convert 端点（普通下载/转换）
-      endpoint = '/convert';
-      body = {
-        videoUrl,
-        formatId: options?.formatId,
-        outputFormat: 'mp4',
-        referer: options?.referer,
-      };
-      break;
-  }
-
-  console.log(`[Download] Calling FFmpeg API: ${endpoint}`);
-
-  const response = await fetch(`${FFMPEG_API_URL}${endpoint}`, {
+  const response = await fetch(`${FFMPEG_API_URL}/download`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    body: JSON.stringify({
+      videoUrl,
+      formatId: options?.formatId,
+      audioUrl: options?.audioUrl,
+      action: options?.action || 'download',
+      trim: options?.trim,
+      audioFormat: options?.audioFormat,
+      audioBitrate: options?.audioBitrate,
+      referer: options?.referer,
+    }),
   });
 
   return response;
