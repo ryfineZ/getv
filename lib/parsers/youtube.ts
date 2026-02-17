@@ -2,6 +2,9 @@ import { BaseParser } from './base';
 import type { VideoInfo, ParseResult, VideoFormat, Subtitle } from '../types';
 import { extractVideoId } from '../utils/url-detector';
 
+// YouTube innertube API key (通过环境变量 YOUTUBE_INNERTUBE_KEY 配置)
+const INNERTUBE_API_KEY = process.env.YOUTUBE_INNERTUBE_KEY || '';
+
 /**
  * YouTube 视频解析器
  * 使用多种方法获取视频信息
@@ -45,7 +48,7 @@ export class YouTubeParser extends BaseParser {
   private async parseWithYoutubei(videoId: string): Promise<VideoInfo | null> {
     try {
       const response = await this.fetch(
-        `https://www.youtube.com/youtubei/v1/player?key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8`,
+        `https://www.youtube.com/youtubei/v1/player?key=${INNERTUBE_API_KEY}`,
         {
           method: 'POST',
           headers: {
@@ -185,7 +188,7 @@ export class YouTubeParser extends BaseParser {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 10000);
         const captionResponse = await globalThis.fetch(
-          `https://www.youtube.com/youtubei/v1/player?key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8`,
+          `https://www.youtube.com/youtubei/v1/player?key=${INNERTUBE_API_KEY}`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },

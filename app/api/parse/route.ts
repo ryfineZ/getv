@@ -229,7 +229,7 @@ export async function POST(request: NextRequest) {
           const controller = new AbortController();
           const timeout = setTimeout(() => controller.abort(), 10000);
           const captionRes = await fetch(
-            `https://www.youtube.com/youtubei/v1/player?key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8`,
+            `https://www.youtube.com/youtubei/v1/player?key=${process.env.YOUTUBE_INNERTUBE_KEY || ''}`,
             {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
