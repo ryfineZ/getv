@@ -19,10 +19,6 @@ function needsFfmpegApi(url: string): boolean {
   if (url.includes('.m3u8')) {
     return true;
   }
-  // Bilibili DASH 流需要 FFmpeg API 代理（CDN 要求 Referer）
-  if (url.includes('bilivideo.com') || url.includes('bilivideo.cn')) {
-    return true;
-  }
   return false;
 }
 
@@ -38,20 +34,28 @@ async function downloadViaFfmpegApi(
     trim?: { start: number; end: number };
     audioFormat?: string;
     audioBitrate?: number;
+    referer?: string;
   }
 ): Promise<Response> {
+  const body: Record<string, unknown> = {
+    videoUrl,
+    formatId: options?.formatId,
+    audioUrl: options?.audioUrl,
+    action: options?.action || 'download',
+    trim: options?.trim,
+    audioFormat: options?.audioFormat,
+    audioBitrate: options?.audioBitrate,
+  };
+
+  // 传递 Referer 给 FFmpeg API，用于需要防盗链验证的 CDN
+  if (options?.referer) {
+    body.referer = options.referer;
+  }
+
   const response = await fetch(`${FFMPEG_API_URL}/download`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      videoUrl,
-      formatId: options?.formatId,
-      audioUrl: options?.audioUrl,
-      action: options?.action || 'download',
-      trim: options?.trim,
-      audioFormat: options?.audioFormat,
-      audioBitrate: options?.audioBitrate,
-    }),
+    body: JSON.stringify(body),
   });
 
   return response;
@@ -84,6 +88,9 @@ export async function POST(request: NextRequest) {
     if (needsFfmpeg || action === 'merge' || action === 'trim' || action === 'extract-audio') {
       console.log('[Download] Using FFmpeg API for processing');
 
+      // 检测是否需要 Bilibili Referer
+      const isBilibili = videoUrl.includes('bilivideo') || audioUrl?.includes('bilivideo');
+
       const ffmpegResponse = await downloadViaFfmpegApi(videoUrl, {
         formatId,
         audioUrl,
@@ -91,6 +98,7 @@ export async function POST(request: NextRequest) {
         trim,
         audioFormat,
         audioBitrate,
+        referer: isBilibili ? 'https://www.bilibili.com/' : undefined,
       });
 
       if (!ffmpegResponse.ok) {
