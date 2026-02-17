@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { detectPlatform, normalizeUrl, isSupportedVideoUrl } from '@/lib/utils/url-detector';
 import { getParser, getBtchParser, getYtdlpParser, hasBtchFallback, hasYtdlpFallback, GenericParser } from '@/lib/parsers';
-import type { ApiResponse, VideoInfo } from '@/lib/types';
+import type { ApiResponse, VideoInfo, VideoFormat } from '@/lib/types';
 
 // 通用解析器实例
 const genericParser = new GenericParser();
@@ -299,6 +299,70 @@ export async function POST(request: NextRequest) {
         }
       } catch (e) {
         console.log('[Parse] 字幕补充失败（不影响视频解析）:', e instanceof Error ? e.message : e);
+      }
+    }
+
+    // ===== 通用文件大小补充：对没有 size 的格式发 HEAD 请求获取 Content-Length =====
+    if (result.data.formats) {
+      const formatsNeedingSize = result.data.formats.filter((f: VideoFormat) => !f.size && f.url);
+      if (formatsNeedingSize.length > 0) {
+        const formatFileSize = (bytes: number): string => {
+          if (bytes < 1024) return `${bytes} B`;
+          if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+          if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+          return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+        };
+
+        const sizePromises = formatsNeedingSize.map(async (format: VideoFormat) => {
+          try {
+            const ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
+
+            // 1. 尝试 HEAD 请求
+            const controller1 = new AbortController();
+            const t1 = setTimeout(() => controller1.abort(), 3000);
+            const resp1 = await fetch(format.url, {
+              method: 'HEAD',
+              signal: controller1.signal,
+              headers: { 'User-Agent': ua },
+            });
+            clearTimeout(t1);
+            const cl = resp1.headers.get('content-length');
+            const ct = resp1.headers.get('content-type') || '';
+            // 仅当 content-type 是媒体类型时才信任 content-length
+            const isMedia = ct.includes('video') || ct.includes('audio') || ct.includes('octet-stream');
+            if (cl && parseInt(cl) > 0 && isMedia) {
+              format.size = parseInt(cl);
+              format.sizeText = formatFileSize(format.size);
+              return;
+            }
+
+            // 2. HEAD 无 Content-Length → 尝试 Range 请求获取 Content-Range
+            const controller2 = new AbortController();
+            const t2 = setTimeout(() => controller2.abort(), 3000);
+            const resp2 = await fetch(format.url, {
+              method: 'GET',
+              signal: controller2.signal,
+              headers: { 'User-Agent': ua, 'Range': 'bytes=0-0' },
+            });
+            clearTimeout(t2);
+
+            if (resp2.status === 206) {
+              // Content-Range: bytes 0-0/12345678
+              const cr = resp2.headers.get('content-range');
+              if (cr) {
+                const match = cr.match(/\/(\d+)/);
+                if (match && parseInt(match[1]) > 0) {
+                  format.size = parseInt(match[1]);
+                  format.sizeText = formatFileSize(format.size);
+                }
+              }
+            }
+          } catch {
+            // 请求失败不影响解析结果
+          }
+        });
+
+        await Promise.allSettled(sizePromises);
       }
     }
 
