@@ -8,6 +8,7 @@ export type Platform =
   | 'xiaohongshu'
   | 'wechat'
   | 'pornhub'
+  | 'bilibili'
   | 'other'     // 其他平台（通过 yt-dlp 解析）
   | 'unknown';
 

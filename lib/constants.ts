@@ -51,6 +51,13 @@ export const PLATFORMS: Record<Platform, PlatformConfig> = {
     icon: 'wechat',
     enabled: true,
   },
+  bilibili: {
+    name: 'Bilibili',
+    domains: ['bilibili.com', 'www.bilibili.com', 'm.bilibili.com', 'b23.tv', 'bilibili.tv'],
+    color: '#FB7299',
+    icon: 'bilibili',
+    enabled: true,
+  },
   pornhub: {
     name: 'PornHub',
     domains: [

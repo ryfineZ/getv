@@ -11,6 +11,7 @@ import { YtDlpParser } from './ytdlp';
 import { BtchParser } from './btch';
 import { BtchEdgeParser } from './btch-edge';
 import { PornHubParser } from './pornhub';
+import { BilibiliParser } from './bilibili';
 import { GenericParser } from './generic';
 
 // 导出所有解析器
@@ -26,6 +27,7 @@ export { YtDlpParser } from './ytdlp';
 export { BtchParser } from './btch';
 export { BtchEdgeParser } from './btch-edge';
 export { PornHubParser } from './pornhub';
+export { BilibiliParser } from './bilibili';
 export { GenericParser } from './generic';
 
 // 解析器映射
@@ -38,6 +40,7 @@ const parserMap: Partial<Record<Platform, BaseParser>> = {
   xiaohongshu: new XiaohongshuParser(),
   wechat: new WeChatParser(),
   pornhub: new PornHubParser(),
+  bilibili: new BilibiliParser(),
 };
 
 // btch-downloader 通用解析器实例（Node.js 环境）
@@ -53,7 +56,7 @@ const ytdlpParser = new YtDlpParser();
 const btchFallbackPlatforms: Platform[] = ['douyin', 'xiaohongshu', 'tiktok', 'instagram'];
 
 // 需要 yt-dlp 后备的平台
-const ytdlpFallbackPlatforms: Platform[] = ['youtube', 'douyin', 'xiaohongshu', 'tiktok', 'instagram'];
+const ytdlpFallbackPlatforms: Platform[] = ['youtube', 'douyin', 'xiaohongshu', 'tiktok', 'instagram', 'bilibili'];
 
 /**
  * 获取平台对应的解析器
@@ -70,9 +73,9 @@ function isEdgeEnvironment(): boolean {
   return typeof globalThis !== 'undefined' &&
     // @ts-expect-error Cloudflare specific
     (typeof globalThis.WebSocketPair !== 'undefined' ||
-     // @ts-expect-error Cloudflare specific
-     typeof globalThis.EmailMessage !== 'undefined' ||
-     process.env.NEXT_RUNTIME === 'edge');
+      // @ts-expect-error Cloudflare specific
+      typeof globalThis.EmailMessage !== 'undefined' ||
+      process.env.NEXT_RUNTIME === 'edge');
 }
 
 /**

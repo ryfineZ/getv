@@ -108,6 +108,15 @@ export function extractVideoId(url: string, platform: Platform): string | null {
         return match ? match[1] : null;
       }
 
+      case 'bilibili': {
+        // Bilibili: /video/BVxxxxxxx 或 /video/avxxxxxxx
+        const bvMatch = urlObj.pathname.match(/\/video\/(BV[a-zA-Z0-9]+)/);
+        if (bvMatch) return bvMatch[1];
+        const avMatch = urlObj.pathname.match(/\/video\/av(\d+)/);
+        if (avMatch) return `av${avMatch[1]}`;
+        return null;
+      }
+
       default:
         return null;
     }
