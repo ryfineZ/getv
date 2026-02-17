@@ -115,7 +115,7 @@ export class BilibiliParser extends BaseParser {
             console.log('[Bilibili] Title:', videoInfo.title, 'CID:', videoInfo.cid);
 
             // 4. 获取视频流
-            const formats = await this.getPlayUrl(videoInfo.bvid, videoInfo.cid);
+            const formats = await this.getPlayUrl(videoInfo.bvid, videoInfo.cid, videoInfo.duration);
             if (formats.length === 0) {
                 return this.createError('获取 B 站视频流失败');
             }
@@ -221,7 +221,7 @@ export class BilibiliParser extends BaseParser {
      * 获取视频播放流
      * fnval=4048 请求 DASH 格式（含 4K、HDR 等）
      */
-    private async getPlayUrl(bvid: string, cid: number): Promise<VideoFormat[]> {
+    private async getPlayUrl(bvid: string, cid: number, duration: number): Promise<VideoFormat[]> {
         try {
             const params = new URLSearchParams({
                 bvid,
@@ -289,6 +289,7 @@ export class BilibiliParser extends BaseParser {
                             bitrate: stream.bandwidth,
                             codec,
                             fps,
+                            size: Math.round(stream.bandwidth * duration / 8),
                         }));
                     }
                 }
@@ -308,6 +309,7 @@ export class BilibiliParser extends BaseParser {
                             hasVideo: false,
                             bitrate: stream.bandwidth,
                             codec,
+                            size: Math.round(stream.bandwidth * duration / 8),
                         }));
                     }
                 }
