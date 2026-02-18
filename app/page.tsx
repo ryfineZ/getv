@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useMemo, useEffect, lazy, Suspense } from 'react';
 import { VideoResult } from '@/components/features/video-result';
+import { PlatformBadges } from '@/components/features/platform-badges';
 import { detectPlatform } from '@/lib/utils/url-detector';
 import { PLATFORMS } from '@/lib/constants';
 import type { VideoInfo, Platform, ApiResponse } from '@/lib/types';
@@ -183,7 +184,7 @@ export default function HomePage() {
   const t = {
     zh: {
       tagline: '精准下载与剪辑全网视频，无需安装任何软件',
-      searchPlaceholder: '粘贴视频链接，支持抖音、小红书、YouTube、TikTok...',
+      searchPlaceholder: '粘贴视频链接，支持 YouTube、Bilibili、抖音、小红书、TikTok...',
       search: '搜索',
       parsing: '解析中',
       batchParsing: (c: number, t: number) => `解析中 ${c}/${t}`,
@@ -195,10 +196,9 @@ export default function HomePage() {
       feat3Title: '完全免费', feat3Desc: '核心功能永久免费，无需注册登录',
       feat4Title: '视频剪辑', feat4Desc: '精确到秒的在线剪辑，下载指定片段',
       faq: '常见问题',
-      faq1Q: '支持哪些平台？', faq1A: '目前支持 YouTube、TikTok、Twitter/X、Instagram、抖音、小红书、视频号等主流平台。',
+      faq1Q: '支持哪些平台？', faq1A: '目前支持 YouTube、Bilibili（B站）、抖音、小红书、TikTok、Twitter/X、Instagram 等主流平台，同时通过 yt-dlp 支持数百个其他站点。',
       faq2Q: '如何批量下载？', faq2A: '在输入框中粘贴多个视频链接（每行一个），点击"搜索"即可。',
-      faq3Q: '视频号如何下载？', faq3A: '需使用抓包工具获取真实链接后粘贴到 GetV。',
-      faq4Q: '解析失败怎么办？', faq4A: '请确保链接正确且视频公开。私密视频无法解析。',
+      faq3Q: '解析失败怎么办？', faq3A: '请确保链接正确且视频公开。私密视频无法解析。',
       faq5Q: '支持最高什么画质？', faq5A: '支持最高 4K (2160p) 及 MP3 320kbps 音频。',
       footer: 'GetV 仅供个人学习和研究使用，请勿用于商业用途',
       copyright: (y: number) => `© ${y} GetV. All rights reserved.`,
@@ -215,7 +215,7 @@ export default function HomePage() {
     },
     en: {
       tagline: 'Download & trim videos from any platform, no software needed',
-      searchPlaceholder: 'Paste video URL (YouTube, TikTok, Twitter, Instagram...)',
+      searchPlaceholder: 'Paste video URL (YouTube, Bilibili, TikTok, Instagram...)',
       search: 'Search',
       parsing: 'Parsing',
       batchParsing: (c: number, t: number) => `Parsing ${c}/${t}`,
@@ -227,10 +227,9 @@ export default function HomePage() {
       feat3Title: 'Totally Free', feat3Desc: 'Core features free forever, no login required',
       feat4Title: 'Video Trimming', feat4Desc: 'Precise online trimming, download exact segments',
       faq: 'FAQ',
-      faq1Q: 'What platforms are supported?', faq1A: 'Supports YouTube, TikTok, Twitter/X, Instagram, etc.',
+      faq1Q: 'What platforms are supported?', faq1A: 'Supports YouTube, Bilibili, Douyin, Xiaohongshu, TikTok, Twitter/X, Instagram, and hundreds more via yt-dlp.',
       faq2Q: 'How to batch download?', faq2A: 'Paste multiple links (one per line) and click "Search".',
-      faq3Q: 'How to download WeChat videos?', faq3A: 'Use packet capture tools to get the real URL.',
-      faq4Q: 'What if parsing fails?', faq4A: 'Ensure the video is public.',
+      faq3Q: 'What if parsing fails?', faq3A: 'Ensure the video is public.',
       faq5Q: 'Max quality?', faq5A: 'Up to 4K (2160p) and MP3 320kbps.',
       footer: 'GetV is for personal learning and research only',
       copyright: (y: number) => `© ${y} GetV. All rights reserved.`,
@@ -354,9 +353,15 @@ export default function HomePage() {
           </div>
 
           {videoInfos.length === 0 && (
-            <div className="mt-8 text-sm text-[var(--muted-foreground)]/60">
-              {i.extensionHint} <a href="/extension" className="text-[var(--primary)] hover:text-white transition-colors border-b border-[var(--primary)] pb-0.5">{i.extensionLink}</a>
-            </div>
+            <>
+              <PlatformBadges
+                activePlatform={detectedPlatforms[0] || null}
+                onPlatformClick={(p) => p === 'wechat' && setShowWechatGuide(true)}
+              />
+              <div className="mt-6 text-sm text-[var(--muted-foreground)]/60">
+                {i.extensionHint} <a href="/extension" className="text-[var(--primary)] hover:text-white transition-colors border-b border-[var(--primary)] pb-0.5">{i.extensionLink}</a>
+              </div>
+            </>
           )}
         </div>
       </section>
@@ -434,7 +439,7 @@ export default function HomePage() {
           <section className="max-w-3xl mx-auto px-6 py-20">
             <h2 className="heading-lg text-center mb-12">{i.faq}</h2>
             <div className="space-y-4">
-              {[{ q: i.faq1Q, a: i.faq1A }, { q: i.faq2Q, a: i.faq2A }, { q: i.faq3Q, a: i.faq3A }, { q: i.faq4Q, a: i.faq4A }, { q: i.faq5Q, a: i.faq5A }].map((faq) => (
+              {[{ q: i.faq1Q, a: i.faq1A }, { q: i.faq2Q, a: i.faq2A }, { q: i.faq3Q, a: i.faq3A }, { q: i.faq5Q, a: i.faq5A }].map((faq) => (
                 <details key={faq.q} className="faq-item">
                   <summary>{faq.q} <span className="text-[var(--primary)] text-xl">+</span></summary>
                   <div className="faq-content">{faq.a}</div>

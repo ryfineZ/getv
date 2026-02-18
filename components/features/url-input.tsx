@@ -55,7 +55,7 @@ export function UrlInput({ onParse, loading }: UrlInputProps) {
             value={url}
             onChange={(e) => handleInputChange(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="粘贴视频链接，支持抖音、小红书、YouTube、TikTok..."
+            placeholder="粘贴视频链接，支持 YouTube、Bilibili、抖音、小红书、TikTok..."
             className="w-full px-5 py-4 pr-12 text-lg input-field"
             disabled={loading}
           />
