@@ -1,195 +1,169 @@
 import { NextRequest, NextResponse } from 'next/server';
 import type { ApiResponse, DownloadRequest } from '@/lib/types';
+import { shouldUseFfmpeg, getRefererForUrl, getAudioContentType } from '@/lib/download-strategy';
 import { FILE_SIZE_LIMITS } from '@/lib/constants';
 
-export const maxDuration = 300; // 5 minutes (Vercel Hobby limit)
+export const runtime = 'nodejs';
 
-// FFmpeg API URL
 const FFMPEG_API_URL = process.env.FFMPEG_API_URL || 'https://ffmpeg.226022.xyz';
 
-/**
- * 检测 URL 是否需要通过 FFmpeg API 处理
- */
-function needsFfmpegApi(url: string): boolean {
-  // 原始 YouTube 页面 URL 需要 yt-dlp
-  if (url.includes('youtube.com/watch') || url.includes('youtu.be/')) {
-    return true;
-  }
-  // m3u8 需要 FFmpeg 处理
-  if (url.includes('.m3u8')) {
-    return true;
-  }
-  return false;
+function sanitizeFilename(filename: string): string {
+  return filename
+    .replace(/[^\u4e00-\u9fa5a-zA-Z0-9_.\-]/g, '_')
+    .replace(/[._]+$/, '');
 }
 
+const POLL_INTERVAL_MS = 3000;  // 每 3 秒轮询一次
+const POLL_TIMEOUT_MS = 30 * 60 * 1000; // 最多等 30 分钟
+
 /**
- * 通过 FFmpeg API 下载视频
+ * 走 FFmpeg VPS：提交异步任务 → 轮询完成 → 流式转发文件
  */
-async function downloadViaFfmpegApi(
-  videoUrl: string,
-  options?: {
-    formatId?: string;
-    audioUrl?: string;
-    action?: string;
-    trim?: { start: number; end: number };
-    audioFormat?: string;
-    audioBitrate?: number;
-    referer?: string;
-  }
-): Promise<Response> {
-  const response = await fetch(`${FFMPEG_API_URL}/download`, {
+async function handleWithFfmpeg(body: DownloadRequest, filename: string): Promise<NextResponse> {
+  const { videoUrl, audioUrl, formatId, action, trim, audioFormat, audioBitrate } = body;
+
+  const referer = getRefererForUrl(videoUrl) ?? (audioUrl ? getRefererForUrl(audioUrl) : undefined);
+
+  // 1. 提交任务，立即拿到 taskId
+  const submitRes = await fetch(`${FFMPEG_API_URL}/download`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       videoUrl,
-      formatId: options?.formatId,
-      audioUrl: options?.audioUrl,
-      action: options?.action || 'download',
-      trim: options?.trim,
-      audioFormat: options?.audioFormat,
-      audioBitrate: options?.audioBitrate,
-      referer: options?.referer,
+      audioUrl,
+      formatId,
+      action: action || 'download',
+      trim,
+      audioFormat,
+      audioBitrate,
+      referer,
     }),
   });
 
-  return response;
+  if (!submitRes.ok) {
+    const errorText = await submitRes.text();
+    console.error('[Download] 提交任务失败:', errorText);
+    return NextResponse.json<ApiResponse>({ success: false, error: `处理失败: ${errorText}` }, { status: 500 });
+  }
+
+  const { taskId } = await submitRes.json() as { taskId: string };
+  console.log('[Download] 任务已提交, taskId:', taskId);
+
+  // 2. 轮询任务状态
+  const deadline = Date.now() + POLL_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
+
+    const statusRes = await fetch(`${FFMPEG_API_URL}/task/${taskId}`);
+    if (!statusRes.ok) {
+      return NextResponse.json<ApiResponse>({ success: false, error: '查询任务状态失败' }, { status: 500 });
+    }
+
+    const { status, error } = await statusRes.json() as { status: string; error?: string };
+    console.log(`[Download] taskId: ${taskId}, status: ${status}`);
+
+    if (status === 'error') {
+      return NextResponse.json<ApiResponse>({ success: false, error: error || '处理失败' }, { status: 500 });
+    }
+
+    if (status === 'done') {
+      // 3. 任务完成，流式转发文件
+      const fileRes = await fetch(`${FFMPEG_API_URL}/task/${taskId}/file`);
+      if (!fileRes.ok) {
+        return NextResponse.json<ApiResponse>({ success: false, error: '获取文件失败' }, { status: 500 });
+      }
+
+      const contentLength = fileRes.headers.get('Content-Length');
+      const contentDisposition = fileRes.headers.get('Content-Disposition');
+
+      let contentType = 'video/mp4';
+      let finalFilename = filename;
+      if (action === 'extract-audio') {
+        const fmt = audioFormat || 'mp3';
+        contentType = getAudioContentType(fmt);
+        finalFilename = filename.replace(/\.[^/.]+$/, `.${fmt}`);
+      }
+
+      return new NextResponse(fileRes.body, {
+        headers: {
+          'Content-Type': contentType,
+          'Content-Disposition': contentDisposition || `attachment; filename*=UTF-8''${encodeURIComponent(finalFilename)}`,
+          ...(contentLength ? { 'Content-Length': contentLength } : {}),
+          'Cache-Control': 'no-cache',
+        },
+      });
+    }
+    // status === 'pending' | 'processing'，继续轮询
+  }
+
+  return NextResponse.json<ApiResponse>({ success: false, error: '任务超时，请重试' }, { status: 504 });
+}
+
+/**
+ * 直接代理：Worker 直接转发视频直链，无需 VPS
+ */
+async function handleDirect(body: DownloadRequest, filename: string): Promise<NextResponse> {
+  const { videoUrl } = body;
+
+  const referer = getRefererForUrl(videoUrl);
+  const headers: Record<string, string> = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  };
+  if (referer) headers['Referer'] = referer;
+
+  const res = await fetch(videoUrl, { headers });
+
+  if (!res.ok) {
+    return NextResponse.json<ApiResponse>(
+      { success: false, error: `无法获取视频文件 (${res.status})` },
+      { status: 400 }
+    );
+  }
+
+  const contentLength = res.headers.get('content-length');
+  const size = contentLength ? parseInt(contentLength) : 0;
+
+  if (size > FILE_SIZE_LIMITS.MAX_FILE_SIZE) {
+    return NextResponse.json<ApiResponse>({ success: false, error: '文件过大，最大支持 2GB' }, { status: 400 });
+  }
+
+  return new NextResponse(res.body, {
+    headers: {
+      'Content-Type': 'video/mp4',
+      'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,
+      ...(contentLength ? { 'Content-Length': contentLength } : {}),
+      'Access-Control-Expose-Headers': 'Content-Disposition',
+    },
+  });
 }
 
 export async function POST(request: NextRequest) {
   try {
     const body: DownloadRequest = await request.json();
-    const { videoUrl, formatId, audioUrl, filename, trim, action, audioFormat, audioBitrate } = body;
-
-    console.log('[Download] Request for:', videoUrl?.substring(0, 100));
-    console.log('[Download] Format ID:', formatId || 'auto');
-    console.log('[Download] Action:', action || 'download');
+    const { videoUrl, filename } = body;
 
     if (!videoUrl) {
-      return NextResponse.json<ApiResponse>({
-        success: false,
-        error: '缺少视频链接',
-      }, { status: 400 });
+      return NextResponse.json<ApiResponse>({ success: false, error: '缺少视频链接' }, { status: 400 });
     }
 
-    // 清理文件名 - 移除特殊字符
-    let downloadFilename = filename || `video_${Date.now()}.mp4`;
-    downloadFilename = downloadFilename.replace(/[^\u4e00-\u9fa5a-zA-Z0-9_.\-]/g, '_');
-    downloadFilename = downloadFilename.replace(/[._]+$/, '');
+    const downloadFilename = sanitizeFilename(filename || `video_${Date.now()}.mp4`);
 
-    // 检测是否需要通过 FFmpeg API 处理
-    const needsFfmpeg = needsFfmpegApi(videoUrl) || (audioUrl && needsFfmpegApi(audioUrl));
+    console.log('[Download] videoUrl:', videoUrl.substring(0, 100));
+    console.log('[Download] action:', body.action || 'download');
+    console.log('[Download] formatId:', body.formatId);
+    console.log('[Download] audioUrl:', body.audioUrl?.substring(0, 80));
+    console.log('[Download] shouldUseFfmpeg:', shouldUseFfmpeg({ videoUrl, audioUrl: body.audioUrl, action: body.action, formatId: body.formatId }));
 
-    if (needsFfmpeg || action === 'merge' || action === 'trim' || action === 'extract-audio') {
-      console.log('[Download] Using FFmpeg API for processing');
-
-      // 检测是否需要 Bilibili Referer
-      const isBilibili = videoUrl.includes('bilivideo') || audioUrl?.includes('bilivideo');
-
-      const ffmpegResponse = await downloadViaFfmpegApi(videoUrl, {
-        formatId,
-        audioUrl,
-        action,
-        trim,
-        audioFormat,
-        audioBitrate,
-        referer: isBilibili ? 'https://www.bilibili.com/' : undefined,
-      });
-
-      if (!ffmpegResponse.ok) {
-        const errorText = await ffmpegResponse.text();
-        console.error('[Download] FFmpeg API error:', errorText);
-        return NextResponse.json<ApiResponse>({
-          success: false,
-          error: `处理失败: ${errorText}`,
-        }, { status: 500 });
-      }
-
-      // 流式返回文件内容
-      const contentLength = ffmpegResponse.headers.get('Content-Length');
-      const contentDisposition = ffmpegResponse.headers.get('Content-Disposition');
-
-      // 确定内容类型
-      let contentType = 'video/mp4';
-      let finalFilename = downloadFilename;
-
-      if (action === 'extract-audio') {
-        const format = audioFormat || 'mp3';
-        contentType = format === 'mp3' ? 'audio/mpeg' : `audio/${format}`;
-        finalFilename = downloadFilename.replace(/\.[^/.]+$/, `.${format}`);
-      }
-
-      console.log('[Download] Streaming response, contentLength:', contentLength);
-
-      // 直接流式返回，不等待完整下载
-      return new NextResponse(ffmpegResponse.body, {
-        headers: {
-          'Content-Type': contentType,
-          'Content-Disposition': contentDisposition || `attachment; filename*=UTF-8''${encodeURIComponent(finalFilename)}`,
-          'Content-Length': contentLength || '',
-          'Cache-Control': 'no-cache',
-          'Access-Control-Allow-Origin': '*',
-        },
-      });
+    if (shouldUseFfmpeg({ videoUrl, audioUrl: body.audioUrl, action: body.action, formatId: body.formatId })) {
+      return handleWithFfmpeg(body, downloadFilename);
     }
 
-    // 普通下载（直接代理）
-    // 检测是否需要特殊 Referer
-    const needsPornhubReferer = videoUrl.includes('pornhub') ||
-      videoUrl.includes('phncdn');
-    const needsXhsReferer = videoUrl.includes('xhscdn') ||
-      videoUrl.includes('xiaohongshu');
-    const needsBilibiliReferer = videoUrl.includes('bilivideo') ||
-      videoUrl.includes('bilibili');
-
-    const fetchHeaders: Record<string, string> = {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    };
-
-    if (needsPornhubReferer) {
-      fetchHeaders['Referer'] = 'https://www.pornhub.com/';
-    } else if (needsXhsReferer) {
-      fetchHeaders['Referer'] = 'https://www.xiaohongshu.com/';
-    } else if (needsBilibiliReferer) {
-      fetchHeaders['Referer'] = 'https://www.bilibili.com/';
-    }
-
-    // 获取视频流
-    const response = await fetch(videoUrl, { headers: fetchHeaders });
-
-    console.log('[Download] Response status:', response.status);
-
-    if (!response.ok) {
-      return NextResponse.json<ApiResponse>({
-        success: false,
-        error: `无法获取视频文件 (${response.status})`,
-      }, { status: 400 });
-    }
-
-    const contentLength = response.headers.get('content-length');
-    const size = contentLength ? parseInt(contentLength) : 0;
-
-    if (size > FILE_SIZE_LIMITS.MAX_FILE_SIZE) {
-      return NextResponse.json<ApiResponse>({
-        success: false,
-        error: '文件过大，最大支持 2GB',
-      }, { status: 400 });
-    }
-
-    console.log('[Download] Sending file:', downloadFilename);
-
-    return new NextResponse(response.body, {
-      headers: {
-        'Content-Type': 'video/mp4',
-        'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(downloadFilename)}`,
-        'Content-Length': size.toString(),
-        'Access-Control-Expose-Headers': 'Content-Disposition',
-      },
-    });
+    return handleDirect(body, downloadFilename);
   } catch (error) {
     console.error('[Download] Error:', error);
-    return NextResponse.json<ApiResponse>({
-      success: false,
-      error: error instanceof Error ? error.message : '下载失败',
-    }, { status: 500 });
+    return NextResponse.json<ApiResponse>(
+      { success: false, error: error instanceof Error ? error.message : '下载失败' },
+      { status: 500 }
+    );
   }
 }
