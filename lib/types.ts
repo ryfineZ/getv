@@ -65,18 +65,14 @@ export interface ParseResult {
 // 下载请求
 export interface DownloadRequest {
   videoUrl: string;
-  formatId?: string;         // YouTube 格式 ID（如 18, 137, 22 等）
   audioUrl?: string;         // 音频 URL（用于合并）
-  format: string;
-  quality?: string;
+  formatId?: string;         // yt-dlp 格式 ID（如 137+140）
+  action?: 'download' | 'merge' | 'trim' | 'extract-audio';
   trim?: {
     start: number;
     end: number;
   };
   filename?: string;
-  // 操作类型
-  action?: 'download' | 'merge' | 'trim' | 'extract-audio';
-  // 音频提取参数
   audioFormat?: 'mp3' | 'm4a' | 'aac' | 'wav';
   audioBitrate?: number;     // kbps
 }

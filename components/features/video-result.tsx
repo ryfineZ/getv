@@ -1,13 +1,64 @@
 'use client';
 
 import { useState, useCallback, useMemo, memo, useEffect, useRef } from 'react';
-import type { VideoInfo, VideoFormat, Subtitle } from '@/lib/types';
+import type { VideoInfo, VideoFormat, Subtitle, DownloadRequest } from '@/lib/types';
 import { formatDuration } from '@/lib/utils/url-detector';
 import { PLATFORMS } from '@/lib/constants';
 import { VideoTrimmer } from './video-trimmer';
 
 const UTF8_FILENAME_REGEX = /filename\*=UTF-8''([^;]+)/;
 const LEGACY_FILENAME_REGEX = /filename="?([^";]+)"?/;
+
+const TEXTS = {
+  zh: {
+    noPrev: '无预览',
+    downloadCover: '下载封面',
+    videoDownload: '视频下载',
+    tabMerged: '原画',
+    tabVideo: '仅视频',
+    tabAudio: '仅音频',
+    quality: '画质',
+    encoding: '编码格式',
+    audioFormat: '音频格式',
+    fileSize: '文件大小',
+    downloading: '下载中',
+    download: '下载',
+    downloadAudio: '下载 MP3 (320kbps)',
+    trimVideo: '视频剪辑',
+    cancel: '取消',
+    clickExpand: '点击展开',
+    auto: '自动 (最佳)',
+    subtitles: '字幕下载',
+    downloadSubtitle: '下载',
+    trimHint: '已设置剪辑',
+    noFormats: '无可用格式',
+    serverProcessing: '服务器处理中，请稍候...',
+  },
+  en: {
+    noPrev: 'No preview',
+    downloadCover: 'Download Cover',
+    videoDownload: 'Video Download',
+    tabMerged: 'Original',
+    tabVideo: 'Video Only',
+    tabAudio: 'Audio Only',
+    quality: 'Quality',
+    encoding: 'Encoding',
+    audioFormat: 'Audio Format',
+    fileSize: 'File size',
+    downloading: 'Downloading',
+    download: 'Download',
+    downloadAudio: 'Download MP3 (320kbps)',
+    trimVideo: 'Trim Video',
+    cancel: 'Cancel',
+    clickExpand: 'Click to expand',
+    auto: 'Auto (best)',
+    subtitles: 'Subtitles',
+    downloadSubtitle: 'Download',
+    trimHint: 'Trim set',
+    noFormats: 'No formats available',
+    serverProcessing: 'Server processing, please wait...',
+  },
+} as const;
 
 interface VideoResultProps {
   videoInfo: VideoInfo;
@@ -176,13 +227,13 @@ function VideoResultInner({ videoInfo, onReset, compact, onExpand, lang = 'zh' }
     setDownloadProgress(0);
   }, []);
 
+  const t = TEXTS[lang];
+
   const getProgressText = () => {
     if (!downloading) return '';
-    if (downloadProgress < 0) return lang === 'zh' ? '服务器处理中，请稍候...' : 'Server processing, please wait...';
+    if (downloadProgress < 0) return t.serverProcessing;
     return `${downloadProgress}%`;
   };
-
-  // 流式下载处理
   const handleStreamDownload = async (response: Response, signal: AbortSignal) => {
     const contentDisposition = response.headers.get('Content-Disposition');
     let filename = `video.mp4`;
@@ -198,6 +249,44 @@ function VideoResultInner({ videoInfo, onReset, compact, onExpand, lang = 'zh' }
     const reader = response.body?.getReader();
     if (!reader) throw new Error('无法读取响应流');
 
+    const contentLength = response.headers.get('Content-Length');
+    const totalSize = contentLength ? parseInt(contentLength, 10) : 0;
+
+    // 尝试使用 File System Access API 直接分发到磁盘（无内存占用，支持 Chrome/Edge 桌面端）
+    if ('showSaveFilePicker' in window) {
+      try {
+        const fileHandle = await (window as any).showSaveFilePicker({
+          suggestedName: filename,
+        });
+        const writable = await fileHandle.createWritable();
+
+        let totalDownloaded = 0;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (signal.aborted) {
+            await writable.abort();
+            throw new Error('已取消');
+          }
+
+          await writable.write(value);
+          totalDownloaded += value.length;
+          if (totalSize > 0) {
+            setDownloadProgress(Math.round((totalDownloaded / totalSize) * 100));
+          }
+        }
+        await writable.close();
+        setDownloadProgress(100);
+        return;
+      } catch (err: any) {
+        if (err.name === 'AbortError' || err.message === '已取消') {
+          throw new Error('已取消');
+        }
+        console.warn('showSaveFilePicker 失败，回退到 Blob 内存下载:', err);
+      }
+    }
+
+    // 备选方案：通过内存收集完整 Blob 再下载（兼容所有浏览器，但大文件可能崩溃）
     const chunks: Uint8Array[] = [];
     let totalDownloaded = 0;
 
@@ -209,8 +298,6 @@ function VideoResultInner({ videoInfo, onReset, compact, onExpand, lang = 'zh' }
       chunks.push(value);
       totalDownloaded += value.length;
 
-      const contentLength = response.headers.get('Content-Length');
-      const totalSize = contentLength ? parseInt(contentLength, 10) : 0;
       if (totalSize > 0) {
         setDownloadProgress(Math.round((totalDownloaded / totalSize) * 100));
       }
@@ -229,58 +316,28 @@ function VideoResultInner({ videoInfo, onReset, compact, onExpand, lang = 'zh' }
   };
 
   // ============ 下载处理 ============
-  const handleDownload = async (format?: VideoFormat) => {
-    const targetFormat = format || selectedFormat;
-    if (!targetFormat || downloading) return;
-
+  // 公共执行逻辑：发请求 → 流式下载
+  const executeDownload = async (body: DownloadRequest) => {
     setDownloading(true);
     setDownloadProgress(-1);
-
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
-
     try {
-      const needsTrim = showTrimmer && (trimStart > 0 || trimEnd < videoInfo.duration);
-      // 仅在"原画" Tab 下才自动合并音频
-      const needsMerge = activeTab === 'merged' && targetFormat.hasVideo && !targetFormat.hasAudio && bestAudio;
-      const filename = `${videoInfo.title.slice(0, 50)}.mp4`;
-
-      const downloadBody: Record<string, unknown> = { filename };
-
-      if (isYouTube && videoInfo.originalUrl) {
-        downloadBody.videoUrl = videoInfo.originalUrl;
-        downloadBody.formatId = targetFormat.id;
-      } else {
-        downloadBody.videoUrl = targetFormat.url;
-      }
-
-      if (needsTrim) {
-        downloadBody.action = 'trim';
-        downloadBody.trim = { start: trimStart, end: trimEnd };
-      }
-
-      if (needsMerge && !isYouTube) {
-        downloadBody.action = 'merge';
-        downloadBody.audioUrl = bestAudio!.url;
-      }
-
       const response = await fetch('/api/download', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(downloadBody),
+        body: JSON.stringify(body),
         signal: abortController.signal,
       });
-
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         throw new Error((errorData as { error?: string }).error || '下载失败');
       }
-
       setDownloadProgress(0);
       await handleStreamDownload(response, abortController.signal);
     } catch (error) {
       if (error instanceof Error && error.message !== '已取消') {
-        alert(error instanceof Error ? error.message : '下载失败');
+        alert(error.message);
       }
     } finally {
       setDownloading(false);
@@ -288,50 +345,49 @@ function VideoResultInner({ videoInfo, onReset, compact, onExpand, lang = 'zh' }
     }
   };
 
-  // 下载音频
+  const handleDownload = async (format?: VideoFormat) => {
+    const targetFormat = format || selectedFormat;
+    if (!targetFormat || downloading) return;
+
+    const needsTrim = showTrimmer && (trimStart > 0 || trimEnd < videoInfo.duration);
+    const needsMerge = activeTab === 'merged' && targetFormat.hasVideo && !targetFormat.hasAudio && bestAudio;
+    const filename = `${videoInfo.title.slice(0, 50)}.mp4`;
+
+    const body: DownloadRequest = { videoUrl: targetFormat.url, filename };
+
+    if (needsMerge) {
+      // 分离流：YouTube 传 originalUrl+formatId 让 VPS 用 yt-dlp 处理（action=download，VPS 自动合并）
+      // 其他平台传视频直链+音频直链，VPS 用 ffmpeg 合并（action=merge）
+      if (isYouTube && videoInfo.originalUrl) {
+        body.videoUrl = videoInfo.originalUrl;
+        body.formatId = targetFormat.id;
+        body.action = 'download';
+      } else {
+        body.audioUrl = bestAudio!.url;
+        body.action = 'merge';
+      }
+    }
+
+    if (needsTrim) {
+      body.action = 'trim';
+      body.trim = { start: trimStart, end: trimEnd };
+    }
+
+    await executeDownload(body);
+  };
+
   const handleDownloadAudio = async () => {
     if (downloading) return;
-    setDownloading(true);
-    setDownloadProgress(-1);
+    const audioSourceUrl = selectedFormat?.url || bestAudio?.url;
+    if (!audioSourceUrl) return alert('没有可用的音频源');
 
-    const abortController = new AbortController();
-    abortControllerRef.current = abortController;
-
-    try {
-      const audioSourceUrl = isYouTube && videoInfo.originalUrl
-        ? videoInfo.originalUrl
-        : (selectedFormat?.url || bestAudio?.url);
-
-      if (!audioSourceUrl) throw new Error('没有可用的音频源');
-
-      const response = await fetch('/api/download', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          videoUrl: audioSourceUrl,
-          action: 'extract-audio',
-          audioFormat: 'mp3',
-          audioBitrate: 320,
-          filename: `${videoInfo.title.slice(0, 50)}.mp3`,
-        }),
-        signal: abortController.signal,
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error((errorData as { error?: string }).error || '音频下载失败');
-      }
-
-      setDownloadProgress(0);
-      await handleStreamDownload(response, abortController.signal);
-    } catch (error) {
-      if (error instanceof Error && error.message !== '已取消') {
-        alert(error instanceof Error ? error.message : '音频下载失败');
-      }
-    } finally {
-      setDownloading(false);
-      setDownloadProgress(0);
-    }
+    await executeDownload({
+      videoUrl: audioSourceUrl,
+      action: 'extract-audio',
+      audioFormat: 'mp3',
+      audioBitrate: 320,
+      filename: `${videoInfo.title.slice(0, 50)}.mp3`,
+    });
   };
 
   // 下载封面
@@ -362,57 +418,6 @@ function VideoResultInner({ videoInfo, onReset, compact, onExpand, lang = 'zh' }
       alert(lang === 'zh' ? '字幕下载失败' : 'Subtitle download failed');
     }
   }, [videoInfo, lang]);
-
-  const texts = {
-    zh: {
-      noPrev: '无预览',
-      downloadCover: '下载封面',
-      videoDownload: '视频下载',
-      tabMerged: '原画',
-      tabVideo: '仅视频',
-      tabAudio: '仅音频',
-      quality: '画质',
-      encoding: '编码格式',
-      audioFormat: '音频格式',
-      fileSize: '文件大小',
-      downloading: '下载中',
-      download: '下载',
-      downloadAudio: '下载 MP3 (320kbps)',
-      trimVideo: '视频剪辑',
-      cancel: '取消',
-      clickExpand: '点击展开',
-      auto: '自动 (最佳)',
-      subtitles: '字幕下载',
-      downloadSubtitle: '下载',
-      trimHint: '已设置剪辑',
-      noFormats: '无可用格式',
-    },
-    en: {
-      noPrev: 'No preview',
-      downloadCover: 'Download Cover',
-      videoDownload: 'Video Download',
-      tabMerged: 'Original',
-      tabVideo: 'Video Only',
-      tabAudio: 'Audio Only',
-      quality: 'Quality',
-      encoding: 'Encoding',
-      audioFormat: 'Audio Format',
-      fileSize: 'File size',
-      downloading: 'Downloading',
-      download: 'Download',
-      downloadAudio: 'Download MP3 (320kbps)',
-      trimVideo: 'Trim Video',
-      cancel: 'Cancel',
-      clickExpand: 'Click to expand',
-      auto: 'Auto (best)',
-      subtitles: 'Subtitles',
-      downloadSubtitle: 'Download',
-      trimHint: 'Trim set',
-      noFormats: 'No formats available',
-    },
-  };
-
-  const t = texts[lang];
 
   // 剪辑后文件大小估算
   const estimatedTrimSize = useMemo(() => {
