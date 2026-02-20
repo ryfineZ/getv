@@ -67,30 +67,11 @@ async function handleWithFfmpeg(body: DownloadRequest, filename: string): Promis
     }
 
     if (status === 'done') {
-      // 3. 任务完成，流式转发文件
-      const fileRes = await fetch(`${FFMPEG_API_URL}/task/${taskId}/file`);
-      if (!fileRes.ok) {
-        return NextResponse.json<ApiResponse>({ success: false, error: '获取文件失败' }, { status: 500 });
-      }
-
-      const contentLength = fileRes.headers.get('Content-Length');
-      const contentDisposition = fileRes.headers.get('Content-Disposition');
-
-      let contentType = 'video/mp4';
-      let finalFilename = filename;
-      if (action === 'extract-audio') {
-        const fmt = audioFormat || 'mp3';
-        contentType = getAudioContentType(fmt);
-        finalFilename = filename.replace(/\.[^/.]+$/, `.${fmt}`);
-      }
-
-      return new NextResponse(fileRes.body, {
-        headers: {
-          'Content-Type': contentType,
-          'Content-Disposition': contentDisposition || `attachment; filename*=UTF-8''${encodeURIComponent(finalFilename)}`,
-          ...(contentLength ? { 'Content-Length': contentLength } : {}),
-          'Cache-Control': 'no-cache',
-        },
+      // 3. 任务完成，返回直链让浏览器直连 VPS 下载
+      const downloadUrl = `${FFMPEG_API_URL}/task/${taskId}/file`;
+      return NextResponse.json<ApiResponse<{ url: string; filename: string }>>({
+        success: true,
+        data: { url: downloadUrl, filename },
       });
     }
     // status === 'pending' | 'processing'，继续轮询

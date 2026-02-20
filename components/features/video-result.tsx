@@ -333,6 +333,24 @@ function VideoResultInner({ videoInfo, onReset, compact, onExpand, lang = 'zh' }
         const errorData = await response.json().catch(() => ({}));
         throw new Error((errorData as { error?: string }).error || '下载失败');
       }
+
+      const contentType = response.headers.get('Content-Type') || '';
+
+      // VPS 异步任务完成后返回直链，浏览器直连下载
+      if (contentType.includes('application/json')) {
+        const json = await response.json() as { success: boolean; data?: { url: string; filename: string }; error?: string };
+        if (!json.success || !json.data?.url) throw new Error(json.error || '下载失败');
+        const a = document.createElement('a');
+        a.href = json.data.url;
+        a.download = json.data.filename || 'video.mp4';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setDownloadProgress(100);
+        return;
+      }
+
+      // 直接代理流（非 VPS 路径）
       setDownloadProgress(0);
       await handleStreamDownload(response, abortController.signal);
     } catch (error) {
