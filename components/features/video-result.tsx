@@ -391,6 +391,7 @@ function VideoResultInner({ videoInfo, onReset, compact, onExpand, lang = 'zh' }
       body.videoUrl = videoInfo.originalUrl;
       body.formatId = targetFormat.id;
       body.action = 'download';
+      body.videoOnly = true;
     }
 
     if (needsTrim) {
@@ -406,13 +407,21 @@ function VideoResultInner({ videoInfo, onReset, compact, onExpand, lang = 'zh' }
     const audioSourceUrl = selectedFormat?.url || bestAudio?.url;
     if (!audioSourceUrl) return alert('没有可用的音频源');
 
-    await executeDownload({
+    const body: DownloadRequest = {
       videoUrl: audioSourceUrl,
       action: 'extract-audio',
       audioFormat: 'mp3',
       audioBitrate: 320,
       filename: `${videoInfo.title.slice(0, 50)}.mp3`,
-    });
+    };
+
+    // YouTube：传 originalUrl 让 VPS 用 yt-dlp 下载音频
+    if (isYouTube && videoInfo.originalUrl) {
+      body.videoUrl = videoInfo.originalUrl;
+      body.formatId = selectedFormat?.id || bestAudio?.id;
+    }
+
+    await executeDownload(body);
   };
 
   // 下载封面

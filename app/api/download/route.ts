@@ -20,7 +20,7 @@ const POLL_TIMEOUT_MS = 30 * 60 * 1000; // 最多等 30 分钟
  * 走 FFmpeg VPS：提交异步任务 → 轮询完成 → 流式转发文件
  */
 async function handleWithFfmpeg(body: DownloadRequest, filename: string): Promise<NextResponse> {
-  const { videoUrl, audioUrl, formatId, action, trim, audioFormat, audioBitrate } = body;
+  const { videoUrl, audioUrl, formatId, action, trim, audioFormat, audioBitrate, videoOnly } = body;
 
   const referer = getRefererForUrl(videoUrl) ?? (audioUrl ? getRefererForUrl(audioUrl) : undefined);
 
@@ -37,6 +37,7 @@ async function handleWithFfmpeg(body: DownloadRequest, filename: string): Promis
       audioFormat,
       audioBitrate,
       referer,
+      videoOnly,
     }),
   });
 

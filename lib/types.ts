@@ -75,6 +75,7 @@ export interface DownloadRequest {
   filename?: string;
   audioFormat?: 'mp3' | 'm4a' | 'aac' | 'wav';
   audioBitrate?: number;     // kbps
+  videoOnly?: boolean;       // 仅下载视频，不合并音频
 }
 
 // API 响应
