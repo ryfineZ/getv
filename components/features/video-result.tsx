@@ -386,6 +386,13 @@ function VideoResultInner({ videoInfo, onReset, compact, onExpand, lang = 'zh' }
       }
     }
 
+    // 仅视频 tab：YouTube 格式也走 VPS yt-dlp，速度更快
+    if (activeTab === 'video' && isYouTube && videoInfo.originalUrl) {
+      body.videoUrl = videoInfo.originalUrl;
+      body.formatId = targetFormat.id;
+      body.action = 'download';
+    }
+
     if (needsTrim) {
       body.action = 'trim';
       body.trim = { start: trimStart, end: trimEnd };
