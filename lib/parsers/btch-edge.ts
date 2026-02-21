@@ -116,6 +116,25 @@ export class BtchEdgeParser extends BaseParser {
       }
     }
 
+    // 图片笔记
+    if (formats.length === 0 && xhsData.images && Array.isArray(xhsData.images) && xhsData.images.length > 0) {
+      return this.createSuccess({
+        id: xhsData.noteId || Date.now().toString(),
+        platform: 'xiaohongshu',
+        title: xhsData.title || xhsData.nickname || '小红书笔记',
+        description: xhsData.desc || '',
+        thumbnail: xhsData.images[0] || '',
+        duration: 0,
+        durationText: '',
+        author: xhsData.nickname || '',
+        authorAvatar: '',
+        formats: [],
+        images: xhsData.images as string[],
+        originalUrl: url,
+        parsedAt: Date.now(),
+      });
+    }
+
     if (formats.length === 0) {
       return this.createError('未找到视频下载链接');
     }

@@ -33,6 +33,10 @@ const TEXTS = {
     trimHint: '已设置剪辑',
     noFormats: '无可用格式',
     serverProcessing: '服务器处理中，请稍候...',
+    imageGallery: '图片下载',
+    downloadAll: '下载全部图片',
+    downloadImage: '下载',
+    imageCount: '张图片',
   },
   en: {
     noPrev: 'No preview',
@@ -57,6 +61,10 @@ const TEXTS = {
     trimHint: 'Trim set',
     noFormats: 'No formats available',
     serverProcessing: 'Server processing, please wait...',
+    imageGallery: 'Image Download',
+    downloadAll: 'Download All Images',
+    downloadImage: 'Download',
+    imageCount: 'images',
   },
 } as const;
 
@@ -137,7 +145,7 @@ function VideoResultInner({ videoInfo, onReset, compact, onExpand, lang = 'zh' }
   // 对防盗链 CDN 的图片使用代理
   const proxyImageUrl = (url: string | undefined) => {
     if (!url) return undefined;
-    if (url.includes('hdslb.com') || url.includes('bilibili.com')) {
+    if (url.includes('hdslb.com') || url.includes('bilibili.com') || url.includes('xhscdn.com') || url.includes('xiaohongshu.com')) {
       return `/api/image-proxy?url=${encodeURIComponent(url)}`;
     }
     return url;
@@ -453,6 +461,29 @@ function VideoResultInner({ videoInfo, onReset, compact, onExpand, lang = 'zh' }
     }
   }, [videoInfo, lang]);
 
+  // 下载单张图片
+  const handleDownloadImage = useCallback((imageUrl: string, index: number) => {
+    const a = document.createElement('a');
+    a.href = proxyImageUrl(imageUrl) || imageUrl;
+    a.download = `${videoInfo.title.slice(0, 50)}_${index + 1}.jpg`;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }, [videoInfo]);
+
+  // 下载全部图片
+  const handleDownloadAllImages = useCallback(() => {
+    if (!videoInfo.images) return;
+    videoInfo.images.forEach((url, i) => {
+      setTimeout(() => handleDownloadImage(url, i), i * 300);
+    });
+  }, [videoInfo.images, handleDownloadImage]);
+
+  // 是否为图片模式
+  const isImageMode = (videoInfo.images?.length ?? 0) > 0 && videoInfo.formats.length === 0;
+
   // 剪辑后文件大小估算
   const estimatedTrimSize = useMemo(() => {
     if (!showTrimmer || !selectedFormat?.size || !videoInfo.duration) return null;
@@ -591,6 +622,46 @@ function VideoResultInner({ videoInfo, onReset, compact, onExpand, lang = 'zh' }
 
           {/* ===== 右栏：操作面板 ===== */}
           <div className="lg:w-[55%] border-t lg:border-t-0 lg:border-l border-[var(--glass-border)] p-6 lg:p-8">
+
+            {isImageMode ? (
+              /* ===== 图片模式 ===== */
+              <div>
+                <div className="section-label mb-3">{t.imageGallery} ({videoInfo.images!.length} {t.imageCount})</div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-4 max-h-[400px] overflow-y-auto">
+                  {videoInfo.images!.map((img, idx) => (
+                    <div key={idx} className="relative group rounded-lg overflow-hidden border border-[var(--border)] aspect-square bg-black/30">
+                      <img
+                        src={proxyImageUrl(img)}
+                        alt={`${idx + 1}`}
+                        className="w-full h-full object-cover"
+                        loading="lazy"
+                      />
+                      <button
+                        onClick={() => handleDownloadImage(img, idx)}
+                        className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <button
+                  onClick={handleDownloadAllImages}
+                  className="w-full btn btn-primary btn-lg animate-pulse-glow"
+                >
+                  <div className="flex items-center gap-2">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    <span>{t.downloadAll} ({videoInfo.images!.length})</span>
+                  </div>
+                </button>
+              </div>
+            ) : (
+            /* ===== 视频模式 ===== */
+            <>
             {/* 下载进度条 */}
             {downloading && (
               <div className="mb-4">
@@ -818,6 +889,8 @@ function VideoResultInner({ videoInfo, onReset, compact, onExpand, lang = 'zh' }
                 </div>
               )}
             </div>
+            </>
+            )}
           </div>
         </div>
       </div>

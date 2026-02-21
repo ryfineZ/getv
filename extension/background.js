@@ -31,6 +31,7 @@ const videoPatterns = [
   /\.mov(\?|$)/i,
   /\.mkv(\?|$)/i,
   /\.avi(\?|$)/i,
+  /\.m4s(\?|$)/i,
   // 视频分片
   /\/segment\/\d+\.ts(\?|$)/i,
   /\/\d+\.ts(\?|$)/i,
@@ -38,6 +39,8 @@ const videoPatterns = [
   /\/video\//i,
   /\/videos\//i,
   /\/media\/.*\.(mp4|m3u8|flv)/i,
+  // B 站 CDN
+  /bilivideo\.(com|cn)\/upgcxcode\//i,
 ];
 
 // 排除规则 - 明确不是视频的请求
@@ -336,7 +339,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ success: true });
       break;
 
-    case 'SEND_TO_CUTCUT':
+    case 'SEND_TO_GETV':
       sendToGetV(message.videoUrl)
         .then(result => sendResponse(result))
         .catch(error => sendResponse({ success: false, error: error.message }));

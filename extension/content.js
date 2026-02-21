@@ -301,7 +301,7 @@
     document.body.appendChild(loading);
 
     chrome.runtime.sendMessage({
-      type: 'SEND_TO_CUTCUT',
+      type: 'SEND_TO_GETV',
       videoUrl: url
     }, (response) => {
       loading.remove();

@@ -21,6 +21,10 @@ export async function GET(request: NextRequest) {
             headers['Referer'] = 'https://www.bilibili.com/';
         }
 
+        if (url.includes('xhscdn.com') || url.includes('xiaohongshu.com')) {
+            headers['Referer'] = 'https://www.xiaohongshu.com/';
+        }
+
         const response = await fetch(url, { headers });
 
         if (!response.ok) {

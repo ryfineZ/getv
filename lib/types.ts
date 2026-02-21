@@ -49,6 +49,7 @@ export interface VideoInfo {
   author?: string;
   authorAvatar?: string;
   formats: VideoFormat[];
+  images?: string[];        // 图片列表（图文笔记）
   subtitles?: Subtitle[]; // 字幕列表
   originalUrl: string;
   parsedAt: number;       // 解析时间戳

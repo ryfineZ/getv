@@ -193,7 +193,7 @@ function getTimeAgo(timestamp) {
 // 绑定视频操作事件
 function bindVideoActions(container) {
   container.querySelectorAll('.action-btn.primary').forEach(btn => {
-    btn.onclick = () => sendToCutCut(btn.dataset.url);
+    btn.onclick = () => sendToGetV(btn.dataset.url);
   });
 
   container.querySelectorAll('.action-btn.download').forEach(btn => {
@@ -212,9 +212,9 @@ function bindVideoActions(container) {
 }
 
 // 发送到 GetV
-function sendToCutCut(url) {
+function sendToGetV(url) {
   chrome.runtime.sendMessage({
-    type: 'SEND_TO_CUTCUT',
+    type: 'SEND_TO_GETV',
     videoUrl: url
   }, (response) => {
     if (response && response.success) {
@@ -283,7 +283,7 @@ function manualAdd() {
     return;
   }
 
-  sendToCutCut(url);
+  sendToGetV(url);
   input.value = '';
 }
 

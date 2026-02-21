@@ -88,9 +88,23 @@ export class XiaohongshuParser extends BaseParser {
         }
       }
 
-      // 如果是纯图片笔记
+      // 如果是纯图片笔记，返回图片列表
       if (data.images && data.images.length > 0 && formats.length === 0) {
-        return this.createError(`这是一个图片笔记，共 ${data.images.length} 张图片，暂不支持下载图片笔记`);
+        return this.createSuccess({
+          id: noteId,
+          platform: 'xiaohongshu',
+          title,
+          description,
+          thumbnail,
+          duration: 0,
+          durationText: '',
+          author: data.nickname || '',
+          authorAvatar: '',
+          formats: [],
+          images: data.images as string[],
+          originalUrl: realUrl,
+          parsedAt: Date.now(),
+        });
       }
 
       if (formats.length === 0) {
