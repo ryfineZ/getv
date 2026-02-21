@@ -132,6 +132,24 @@ export class BtchParser extends BaseParser {
       duration = result.duration || 0;
 
       if (!videoUrl) {
+        // 检查是否为图集（抖音/Instagram 等）
+        if (result.images && Array.isArray(result.images) && result.images.length > 0) {
+          return this.createSuccess({
+            id: result.id || Date.now().toString(),
+            platform,
+            title,
+            description: result.description || '',
+            thumbnail: result.images[0] || thumbnail,
+            duration: 0,
+            durationText: '',
+            author,
+            authorAvatar: result.author?.avatar || '',
+            formats: [],
+            images: result.images as string[],
+            originalUrl: url,
+            parsedAt: Date.now(),
+          });
+        }
         return this.createError('无法获取视频下载链接');
       }
 

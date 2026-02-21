@@ -25,6 +25,14 @@ export async function GET(request: NextRequest) {
             headers['Referer'] = 'https://www.xiaohongshu.com/';
         }
 
+        if (url.includes('douyinpic.com') || url.includes('byteimg.com')) {
+            headers['Referer'] = 'https://www.douyin.com/';
+        }
+
+        if (url.includes('cdninstagram.com') || url.includes('fbcdn.net')) {
+            headers['Referer'] = 'https://www.instagram.com/';
+        }
+
         const response = await fetch(url, { headers });
 
         if (!response.ok) {

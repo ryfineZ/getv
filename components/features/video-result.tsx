@@ -145,7 +145,7 @@ function VideoResultInner({ videoInfo, onReset, compact, onExpand, lang = 'zh' }
   // 对防盗链 CDN 的图片使用代理
   const proxyImageUrl = (url: string | undefined) => {
     if (!url) return undefined;
-    if (url.includes('hdslb.com') || url.includes('bilibili.com') || url.includes('xhscdn.com') || url.includes('xiaohongshu.com')) {
+    if (url.includes('hdslb.com') || url.includes('bilibili.com') || url.includes('xhscdn.com') || url.includes('xiaohongshu.com') || url.includes('douyinpic.com') || url.includes('byteimg.com') || url.includes('cdninstagram.com') || url.includes('fbcdn.net')) {
       return `/api/image-proxy?url=${encodeURIComponent(url)}`;
     }
     return url;

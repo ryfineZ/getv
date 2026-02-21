@@ -37,6 +37,7 @@ export class InstagramParser extends BaseParser {
 
       // 处理多图/多视频情况
       const formats: VideoFormat[] = [];
+      const images: string[] = [];
 
       if (data.url) {
         // 单个视频
@@ -60,12 +61,30 @@ export class InstagramParser extends BaseParser {
               hasAudio: true,
               hasVideo: true,
             }));
+          } else if (item.url) {
+            // 图片
+            images.push(item.url);
           }
         });
       }
 
+      // 纯图片帖子
+      if (formats.length === 0 && images.length > 0) {
+        return this.createSuccess({
+          id: postId || `ig-${Date.now()}`,
+          platform: 'instagram',
+          title: data.filename?.replace(/\.[^/.]+$/, '') || 'Instagram 图片',
+          thumbnail: images[0] || thumbnail,
+          duration: 0,
+          formats: [],
+          images,
+          originalUrl: url,
+          parsedAt: Date.now(),
+        });
+      }
+
       if (formats.length === 0) {
-        return this.createError('未找到视频内容，可能是纯图片帖子');
+        return this.createError('未找到视频内容');
       }
 
       return this.createSuccess({
@@ -75,6 +94,7 @@ export class InstagramParser extends BaseParser {
         thumbnail,
         duration: 0,
         formats,
+        ...(images.length > 0 ? { images } : {}),
         originalUrl: url,
         parsedAt: Date.now(),
       });

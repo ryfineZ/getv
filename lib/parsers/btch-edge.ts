@@ -216,6 +216,24 @@ export class BtchEdgeParser extends BaseParser {
     }
 
     if (formats.length === 0) {
+      // 抖音图集笔记
+      if (douyinData.images && Array.isArray(douyinData.images) && douyinData.images.length > 0) {
+        return this.createSuccess({
+          id: douyinData.noteId || douyinData.videoId || Date.now().toString(),
+          platform: 'douyin',
+          title: douyinData.title || douyinData.desc?.substring(0, 100) || '抖音图集',
+          description: douyinData.desc || '',
+          thumbnail: douyinData.images[0] || '',
+          duration: 0,
+          durationText: '',
+          author: douyinData.nickname || douyinData.author || '',
+          authorAvatar: '',
+          formats: [],
+          images: douyinData.images as string[],
+          originalUrl: url,
+          parsedAt: Date.now(),
+        });
+      }
       return this.createError('未找到视频下载链接');
     }
 
